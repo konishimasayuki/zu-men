@@ -142,6 +142,7 @@ export function referenceScene(): Scene {
     edgings: EDGINGS,
     bands: BANDS,
     basins: BASINS,
+    arrows: [],
     notes: NOTES,
   };
 }

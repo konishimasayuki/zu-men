@@ -80,12 +80,24 @@ describe('実データの筆から図面を組み立てる', () => {
     expect(r.totalAreaM2).toBeCloseTo(r.computedAreas.reduce((s, a) => s + a.areaM2, 0), 9);
   });
 
-  it('申請地の外周にフェンスが回る', () => {
+  it('申請地の外周にフェンスが回る（進入口で切れる）', () => {
     const r = buildSceneFromMoj({
       parcels, subjects: [{ id: subject.id }], zone: ZONE, center,
       paper: PAPER_SIZES.A4, scaleDenominator: 250,
     });
-    expect(r.scene.edgings.filter((e) => e.kind === 'fence')).toHaveLength(1);
+    // 外周1本＋隅切り2本
+    expect(r.scene.edgings.filter((e) => e.kind === 'fence')).toHaveLength(3);
+  });
+
+  it('進入口を作らなければフェンスは閉じた1本', () => {
+    const r = buildSceneFromMoj({
+      parcels, subjects: [{ id: subject.id }], zone: ZONE, center,
+      paper: PAPER_SIZES.A4, scaleDenominator: 250, entrance: false, drainage: false,
+    });
+    const fences = r.scene.edgings.filter((e) => e.kind === 'fence');
+    expect(fences).toHaveLength(1);
+    const path = fences[0].path;
+    expect(path[0]).toEqual(path[path.length - 1]);
   });
 
   it('隣接地には地目・面積・所有者を入れない', () => {

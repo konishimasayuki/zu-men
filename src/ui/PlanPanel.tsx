@@ -21,6 +21,7 @@ import type { PrinterCalibration } from '../paper/calibration';
 import type { SiteSelection } from './SitePicker';
 import { MojParcel, parcelAt, precisionNote, isUsableForArea } from '../data/moj';
 import { buildSceneFromMoj, nearestParcel } from '../scenes/fromMoj';
+import { MIN_EDGE_M, SiteEdge } from '../draw/site';
 import { m2ToTsubo } from '../draw/tsubo';
 
 export interface PlanPanelProps {
@@ -40,6 +41,9 @@ export function PlanPanel({ site, calibration, mojParcels }: PlanPanelProps) {
   const [chimoku, setChimoku] = useState('田');
   const [owner, setOwner] = useState('');
   const [oneWay, setOneWay] = useState(false);
+  // 道路側・放流先は推定できないので画面で選ばせる。null は「未選択（いちばん長い辺）」。
+  const [entranceEdge, setEntranceEdge] = useState<number | null>(null);
+  const [dischargeEdge, setDischargeEdge] = useState<number | null>(null);
   const [paperName, setPaperName] = useState<PaperSizeName>(DEFAULT_PAPER.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +83,8 @@ export function PlanPanel({ site, calibration, mojParcels }: PlanPanelProps) {
         paper,
         scaleDenominator: DEFAULT_SCALE_DENOMINATOR,
         parking: { oneWay },
+        ...(entranceEdge === null ? {} : { entranceEdgeIndex: entranceEdge }),
+        ...(dischargeEdge === null ? {} : { dischargeEdgeIndex: dischargeEdge }),
       })
     : null;
 
@@ -161,6 +167,56 @@ export function PlanPanel({ site, calibration, mojParcels }: PlanPanelProps) {
               {PARKING_STANDARDS.aisle.twoWayMinM}m。駐車場法施行令第7条）
             </label>
           </p>
+
+          <div style={{ marginTop: '0.6rem', paddingTop: '0.6rem', borderTop: '1px solid #cfe0cf' }}>
+            <p style={{ margin: '0 0 0.4rem', fontSize: '0.85rem', color: '#a00' }}>
+              <strong>登記所備付地図に地目は入っていません。</strong>
+              どの辺が道路でどの辺が水路かはデータから判定できないため、下で選んでください。
+              初期値はいちばん長い辺で、これは推定ではありません。
+            </p>
+            <p style={{ margin: '0 0 0.3rem', fontSize: '0.9rem' }}>
+              <label>
+                進入口を置く辺{' '}
+                <select
+                  value={entranceEdge ?? ''}
+                  onChange={(e) => setEntranceEdge(e.target.value === '' ? null : Number(e.target.value))}
+                  style={{ padding: '0.25rem' }}
+                >
+                  <option value="">自動（いちばん長い辺）</option>
+                  {built.edges
+                    .filter((e) => e.lengthM >= MIN_EDGE_M)
+                    .map((e) => (
+                      <option key={e.index} value={e.index}>
+                        {edgeLabel(e)}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </p>
+            <p style={{ margin: 0, fontSize: '0.9rem' }}>
+              <label>
+                雨水の放流先の辺{' '}
+                <select
+                  value={dischargeEdge ?? ''}
+                  onChange={(e) => setDischargeEdge(e.target.value === '' ? null : Number(e.target.value))}
+                  style={{ padding: '0.25rem' }}
+                >
+                  <option value="">進入口と同じ辺</option>
+                  {built.edges
+                    .filter((e) => e.lengthM >= MIN_EDGE_M)
+                    .map((e) => (
+                      <option key={e.index} value={e.index}>
+                        {edgeLabel(e)}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </p>
+            <p style={{ margin: '0.3rem 0 0', fontSize: '0.85rem', color: '#555' }}>
+              舗装すると雨水が浸透しなくなります。<strong>隣接農地へ流さないこと</strong>が
+              審査上の最大の論点なので、放流先には道路の側溝か水路に面した辺を選んでください。
+            </p>
+          </div>
           <p style={{ margin: '0.3rem 0 0', fontSize: '0.85rem', color: isUsableForArea(hit) ? '#060' : '#a00' }}>
             {precisionNote(hit)}
           </p>
@@ -259,4 +315,18 @@ export function PlanPanel({ site, calibration, mojParcels }: PlanPanelProps) {
       {error && <p style={{ color: '#b00' }}>エラー: {error}</p>}
     </section>
   );
+}
+
+/** 辺の選択肢の表示。隣にどの筆があるかが分かれば、それが道路かどうか判断できる。 */
+function edgeLabel(e: SiteEdge): string {
+  const dir = compass(e.outward);
+  const neighbour = e.neighbourChiban ? `隣 ${e.neighbourChiban}` : '隣接筆なし';
+  return `${dir}向き・長さ${e.lengthM.toFixed(1)}m・${neighbour}`;
+}
+
+/** 外向きベクトルを八方位の文字にする。X=北・Y=東。 */
+function compass(v: { x: number; y: number }): string {
+  const deg = ((Math.atan2(v.y, v.x) * 180) / Math.PI + 360) % 360;
+  const names = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+  return names[Math.round(deg / 45) % 8];
 }

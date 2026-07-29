@@ -11,7 +11,9 @@ import { area as polygonArea } from '../geo/area';
 import {
   Scene, Parcel, Corridor, Building, Edging, StallBand, Note, centroid,
 } from '../draw/scene';
-import { drawCar, drawFence, drawRetainingWall, drawKeba, drawBasin, drawLeader } from './symbols';
+import {
+  drawCar, drawFence, drawRetainingWall, drawKeba, drawBasin, drawLeader, drawGutter, drawArrow,
+} from './symbols';
 
 export interface SceneLayout {
   /** 図郭左下に対応する平面直角座標。 */
@@ -110,6 +112,7 @@ function drawBuilding(pen: Pen, m: Mapper, b: Building): void {
 function drawEdging(pen: Pen, m: Mapper, e: Edging): void {
   const path = e.path.map(m.toPaper);
   if (e.kind === 'fence') drawFence(pen, path);
+  else if (e.kind === 'gutter') drawGutter(pen, path);
   else drawRetainingWall(pen, path, e.outwardLeft ?? true);
 }
 
@@ -143,6 +146,7 @@ export function drawSceneContent(pen: Pen, scene: Scene, layout: SceneLayout): v
   for (const p of scene.parcels) drawParcelOutline(pen, m, p);
   for (const b of scene.bands) drawBand(pen, m, b);
   for (const e of scene.edgings) drawEdging(pen, m, e);
+  for (const a of scene.arrows) drawArrow(pen, m.toPaper(a.from), m.toPaper(a.to));
   for (const p of scene.basins) drawBasin(pen, m.toPaper(p));
 
   // 文字はいちばん上

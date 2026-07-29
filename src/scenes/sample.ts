@@ -158,5 +158,8 @@ export function makeSampleScene(spec: SampleSpec): Scene {
 
   const basins: PlaneXY[] = [at(cut + 1, W + 1), at(L - cut - 1, W + 1)];
 
-  return { parcels: [subject, ...neighbours], corridors, buildings, edgings, bands, basins, notes };
+  return {
+    parcels: [subject, ...neighbours], corridors, buildings, edgings, bands, basins, notes,
+    arrows: [],
+  };
 }

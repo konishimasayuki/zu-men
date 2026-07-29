@@ -46,12 +46,24 @@ export interface Building {
   outline: PlaneXY[];
 }
 
-/** 敷地外周のフェンスや土留め。 */
+/** 敷地外周のフェンス・土留めと、排水の側溝。 */
 export interface Edging {
-  kind: 'fence' | 'retaining';
+  kind: 'fence' | 'retaining' | 'gutter';
   path: PlaneXY[];
   /** 土留めのT字を進行方向のどちら側へ出すか。 */
   outwardLeft?: boolean;
+}
+
+/**
+ * 流れの向きを示す矢印。
+ *
+ * 舗装すると雨水が浸透しなくなる。隣接農地へ流さないことが審査上の最大の論点なので、
+ * 排水がどこへ向かうかを図面で示す。
+ */
+export interface FlowArrow {
+  from: PlaneXY;
+  to: PlaneXY;
+  kind: 'drainage';
 }
 
 /** 駐車マス1台分。 */
@@ -90,11 +102,16 @@ export interface Scene {
   bands: StallBand[];
   /** 集水桝の位置。 */
   basins: PlaneXY[];
+  /** 排水の経路と放流先。 */
+  arrows: FlowArrow[];
   notes: Note[];
 }
 
 export function emptyScene(): Scene {
-  return { parcels: [], corridors: [], buildings: [], edgings: [], bands: [], basins: [], notes: [] };
+  return {
+    parcels: [], corridors: [], buildings: [], edgings: [],
+    bands: [], basins: [], arrows: [], notes: [],
+  };
 }
 
 /** 図面に出てくるすべての点。用紙に収まるかの判定に使う。 */
@@ -106,6 +123,7 @@ export function allPoints(scene: Scene): PlaneXY[] {
   for (const e of scene.edgings) pts.push(...e.path);
   for (const b of scene.bands) pts.push(...b.outline);
   pts.push(...scene.basins);
+  for (const a of scene.arrows) pts.push(a.from, a.to);
   for (const n of scene.notes) pts.push(n.at);
   return pts;
 }

@@ -55,13 +55,24 @@ const subject = (await page.locator('text=申請地:').locator('..').innerText()
 console.log('3. ピンが指す筆を申請地に      OK');
 console.log('   ' + subject);
 
+// 道路側・放流先の選択肢が出ているか（データからは判定できないので画面で選ばせる）
+const entOpts = await page.locator('label:has-text("進入口を置く辺") select option').allInnerTexts();
+const disOpts = await page.locator('label:has-text("雨水の放流先の辺") select option').allInnerTexts();
+console.log('4. 進入口・放流先の辺を選べる  ' + (entOpts.length > 1 && disOpts.length > 1 ? 'OK' : '×'));
+console.log('   進入口の候補: ' + entOpts.join(' ／ '));
+// 既定以外の辺を選んで、図面が組み直せることを確かめる
+await page.locator('label:has-text("雨水の放流先の辺") select').selectOption({ index: 2 });
+await page.waitForTimeout(300);
+const chosen = await page.locator('label:has-text("雨水の放流先の辺") select').inputValue();
+console.log('5. 放流先を選び直せる          ' + (chosen !== '' ? 'OK（辺' + chosen + '）' : '×'));
+
 const dl = page.waitForEvent('download', { timeout: 40000 });
 await page.getByRole('button', { name: /この場所の計画平面図PDFを出力/ }).click();
 const d = await dl;
 const path = `${OUT}/plan_moj.pdf`;
 await d.saveAs(path);
 const bytes = readFileSync(path);
-console.log(`4. PDF出力                     ${bytes.subarray(0,5).toString('latin1') === '%PDF-' ? 'OK' : '×'}  ${bytes.length.toLocaleString()}バイト`);
+console.log(`6. PDF出力                     ${bytes.subarray(0,5).toString('latin1') === '%PDF-' ? 'OK' : '×'}  ${bytes.length.toLocaleString()}バイト`);
 
 await page.screenshot({ path: `${OUT}/moj_flow.png`, fullPage: true });
 console.log('エラー: ' + (errors.length ? errors.join('\n  ') : 'なし'));

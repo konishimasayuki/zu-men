@@ -220,3 +220,91 @@ export function drawBasin(pen: Pen, center: Pt2, sizeMm = 2.2): void {
 export function drawLeader(pen: Pen, from: Pt2, elbow: Pt2, to: Pt2): void {
   pen.polyline([from, elbow, to], LW.hair);
 }
+
+/* ------------------------------------------------------------- 側溝 */
+
+/** 側溝の幅。図上で見える最小限にとどめる。 */
+const GUTTER_WIDTH_MM = 1.0;
+
+/**
+ * 側溝（U字溝）。中心線の両側に線を引き、一定間隔で継ぎ目を入れる。
+ * 線号は公共測量標準図式の3号（standards.ts の SIDE_DITCH_LINE_NUMBER）。
+ */
+export function drawGutter(pen: Pen, points: readonly Pt2[]): void {
+  if (points.length < 2) return;
+  const h = GUTTER_WIDTH_MM / 2;
+  const left: Pt2[] = [];
+  const right: Pt2[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[Math.max(0, i - 1)];
+    const b = points[Math.min(points.length - 1, i + 1)];
+    const dx = b.mmX - a.mmX;
+    const dy = b.mmY - a.mmY;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    left.push({ mmX: points[i].mmX + nx * h, mmY: points[i].mmY + ny * h });
+    right.push({ mmX: points[i].mmX - nx * h, mmY: points[i].mmY - ny * h });
+  }
+  pen.polyline(left, LW.sideDitch);
+  pen.polyline(right, LW.sideDitch);
+
+  // 継ぎ目
+  const pitch = 4.0;
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const seg = Math.hypot(b.mmX - a.mmX, b.mmY - a.mmY);
+    if (seg < 1e-9) continue;
+    const ux = (b.mmX - a.mmX) / seg;
+    const uy = (b.mmY - a.mmY) / seg;
+    for (let t = pitch; t < seg; t += pitch) {
+      const cx = a.mmX + ux * t;
+      const cy = a.mmY + uy * t;
+      pen.polyline(
+        [
+          { mmX: cx - uy * h, mmY: cy + ux * h },
+          { mmX: cx + uy * h, mmY: cy - ux * h },
+        ],
+        LW.sideDitch,
+      );
+    }
+  }
+}
+
+/* ------------------------------------------------------------- 矢印 */
+
+/** 矢じりの一辺[mm]。 */
+const ARROW_HEAD_MM = 2.0;
+/** 矢じりの開き[度]（軸から片側）。 */
+const ARROW_HEAD_DEG = 22;
+
+/**
+ * 流れの向きを示す矢印。排水経路に使う。
+ *
+ * 短すぎる矢印は矢じりだけになって向きが読めないので、
+ * 矢じりが軸より長くなる場合は何も描かない。
+ */
+export function drawArrow(pen: Pen, from: Pt2, to: Pt2): void {
+  const dx = to.mmX - from.mmX;
+  const dy = to.mmY - from.mmY;
+  const len = Math.hypot(dx, dy);
+  if (len <= ARROW_HEAD_MM) return;
+
+  pen.polyline([from, to], LW.symbol);
+
+  const ux = dx / len;
+  const uy = dy / len;
+  const rad = (ARROW_HEAD_DEG * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  // 軸の逆向きを ±ARROW_HEAD_DEG 回した2本
+  for (const s of [1, -1]) {
+    const hx = -ux * cos - s * -uy * sin;
+    const hy = -uy * cos - s * ux * sin;
+    pen.polyline(
+      [to, { mmX: to.mmX + hx * ARROW_HEAD_MM, mmY: to.mmY + hy * ARROW_HEAD_MM }],
+      LW.symbol,
+    );
+  }
+}

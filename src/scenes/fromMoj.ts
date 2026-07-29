@@ -12,6 +12,10 @@ import type { PlaneXY } from '../paper/transform';
 import type { Scene, Parcel } from '../draw/scene';
 import { emptyScene } from '../draw/scene';
 import { labelSpot, layoutParking, ParkingLayoutOptions } from '../draw/layout';
+import {
+  boundaryEdges, defaultEntranceEdge, planDrainage, planEntrance,
+  DrainageOptions, EntranceOptions, NeighbourPolygon, SiteEdge,
+} from '../draw/site';
 import { toPlaneXY } from '../geo/crs';
 import type { ZoneNumber } from '../geo/crs';
 import { area } from '../geo/area';
@@ -49,6 +53,23 @@ export interface BuildFromMojOptions {
    * この図面は「駐車場に転用する計画」を示すものなので、区画が無いと図面にならない。
    */
   parking?: false | ParkingLayoutOptions;
+  /**
+   * 進入口を置く辺（申請地の外周の何番目か）。
+   *
+   * **どの辺が道路かはこのデータからは分からない。** 登記所備付地図に地目は無く、
+   * 実データでは道路も水路も登記された筆として隣接している。省略した場合は
+   * いちばん長い辺を初期選択とするが、それは推定ではない。画面で選び直させること。
+   */
+  entranceEdgeIndex?: number;
+  /** 進入口・隅切りの寸法。 */
+  entrance?: false | EntranceOptions;
+  /**
+   * 雨水の放流先の辺。省略すると進入口と同じ辺（道路側の側溝へ流す想定）。
+   * 隣接農地の側を選ばないこと。舗装後の流入防止が審査上の最大の論点。
+   */
+  dischargeEdgeIndex?: number;
+  /** 排水を描くか。既定は描く。 */
+  drainage?: false | DrainageOptions;
 }
 
 export interface BuildFromMojResult {
@@ -66,6 +87,15 @@ export interface BuildFromMojResult {
    * **図面には書かない**（参考図面に記載が無いため）。画面で確認するための値。
    */
   stallCount: number;
+  /**
+   * 申請地の外周の辺。画面で「どれが道路か」「どこへ放流するか」を選ばせるための一覧。
+   * 申請地が複数筆のときは1筆目のもの。
+   */
+  edges: SiteEdge[];
+  /** 実際に進入口を置いた辺の番号。置かなければ null。 */
+  entranceEdgeIndex: number | null;
+  /** 実際に放流先とした辺の番号。排水を描かなければ null。 */
+  dischargeEdgeIndex: number | null;
 }
 
 /**
@@ -134,11 +164,25 @@ export function buildSceneFromMoj(opts: BuildFromMojOptions): BuildFromMojResult
     }
   }
 
+  // 進入口・排水は申請地の1筆目の外周を基準にする。
+  // 複数筆を1つの敷地として扱う統合はまだ実装していない。
+  const primary = subjectParcels[0]
+    ? subjectParcels[0].outline.map((q) => toPlaneXY(q, zone))
+    : null;
+  const neighbourPolys: NeighbourPolygon[] = neighbourParcels.map((p) => ({
+    chiban: p.chiban,
+    outline: p.outline.map((q) => toPlaneXY(q, zone)),
+  }));
+  const edges = primary ? boundaryEdges(primary, neighbourPolys) : [];
+
+  let entranceEdgeIndex: number | null = null;
+  let dischargeEdgeIndex: number | null = null;
+
   // 申請地の外周にフェンスを回し、内側に駐車区画を割り付ける
   let stallCount = 0;
   for (const p of subjectParcels) {
     const outline = p.outline.map((q) => toPlaneXY(q, zone));
-    scene.edgings.push({ kind: 'fence', path: outline.concat([outline[0]]) });
+    const isPrimary = p === subjectParcels[0];
 
     const layout = opts.parking === false ? null : layoutParking(outline, opts.parking ?? {});
     if (layout) {
@@ -148,6 +192,58 @@ export function buildSceneFromMoj(opts: BuildFromMojOptions): BuildFromMojResult
       for (const at of layout.aisleCenters) {
         scene.notes.push({ text: '通路', at, rotationDeg: paperRotationFor(layout.bearingDeg) });
       }
+    }
+
+    // 進入口。フェンスは開口部で切る。切らないと車の入れない図面になる。
+    const entranceEdge =
+      isPrimary && opts.entrance !== false
+        ? pickEdge(edges, opts.entranceEdgeIndex) ?? defaultEntranceEdge(edges)
+        : null;
+    if (entranceEdge) {
+      const plan = planEntrance(outline, entranceEdge, opts.entrance || {});
+      entranceEdgeIndex = entranceEdge.index;
+      for (const path of plan.fencePaths) scene.edgings.push({ kind: 'fence', path });
+      for (const [a, b] of plan.cornerCuts) scene.edgings.push({ kind: 'fence', path: [a, b] });
+      // 参考図面の進入口は引出し線で示されている。矢印記号は入れない。
+      scene.notes.push({
+        text: '進入口',
+        at: {
+          x: plan.center.x + entranceEdge.outward.x * 3.5,
+          y: plan.center.y + entranceEdge.outward.y * 3.5,
+        },
+        sizeMm: 2.6,
+        leaderTo: plan.center,
+      });
+    } else {
+      scene.edgings.push({ kind: 'fence', path: outline.concat([outline[0]]) });
+    }
+
+    // 排水。舗装で浸透しなくなるぶんを放流先へ導く。
+    const dischargeEdge =
+      isPrimary && opts.drainage !== false
+        ? pickEdge(edges, opts.dischargeEdgeIndex) ?? entranceEdge
+        : null;
+    if (dischargeEdge) {
+      const plan = planDrainage(layout?.bands ?? [], dischargeEdge, opts.drainage || {});
+      dischargeEdgeIndex = dischargeEdge.index;
+      if (plan.gutter) scene.edgings.push(plan.gutter);
+      scene.basins.push(...plan.basins);
+      scene.arrows.push(...plan.arrows);
+      // 進入口の注記と重ならないよう、辺の中央ではなく1/5あたりの外側に置く
+      const t = 0.2;
+      const anchor = {
+        x: dischargeEdge.a.x + (dischargeEdge.b.x - dischargeEdge.a.x) * t,
+        y: dischargeEdge.a.y + (dischargeEdge.b.y - dischargeEdge.a.y) * t,
+      };
+      scene.notes.push({
+        text: '雨水放流先',
+        at: {
+          x: anchor.x + dischargeEdge.outward.x * 3.0,
+          y: anchor.y + dischargeEdge.outward.y * 3.0,
+        },
+        sizeMm: 2.6,
+        leaderTo: anchor,
+      });
     }
 
     // 地番・地目・面積・所有者は4行になる。区画に重なると読めないので空き地を探す。
@@ -164,7 +260,16 @@ export function buildSceneFromMoj(opts: BuildFromMojOptions): BuildFromMojResult
     computedAreas,
     totalAreaM2: computedAreas.reduce((s, a) => s + a.areaM2, 0),
     stallCount,
+    edges,
+    entranceEdgeIndex,
+    dischargeEdgeIndex,
   };
+}
+
+/** 番号で辺を選ぶ。範囲外や未指定なら null。 */
+function pickEdge(edges: readonly SiteEdge[], index: number | undefined): SiteEdge | null {
+  if (index === undefined) return null;
+  return edges.find((e) => e.index === index) ?? null;
 }
 
 /**
