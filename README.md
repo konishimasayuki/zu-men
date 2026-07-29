@@ -7,10 +7,21 @@
 ## 使う流れ
 
 1. 住所を検索する
-2. 地図をクリックしてピンを対象地に合わせる
-3. 系番号を確認する（間違えると座標が数十kmずれる）
-4. 坪数・向き・地番を決める
-5. 「この場所の計画平面図PDFを出力」
+2. 登記所備付地図のGeoJSONを読み込む（G空間情報センターで市区町村単位に公開）
+3. 地図をクリックしてピンを対象地に合わせる → その筆が申請地になる
+4. 系番号を確認する（間違えると座標が数十kmずれる）
+5. 地目・所有者を入力する（登記所備付地図に含まれないため）
+6. 「この場所の計画平面図PDFを出力」
+
+## 登記所備付地図データの入手
+
+G空間情報センターのCKANで市区町村単位に公開されている。
+
+```sh
+curl -s "https://www.geospatial.jp/ckan/api/3/action/package_show?id=aigid-moj-11217" | jq '.result.resources[] | {format, name, url}'
+```
+
+`aigid-moj-{市区町村コード}` の GeoJSON をダウンロードして画面から読み込む。
 
 開発方針は [CLAUDE.md](./CLAUDE.md)、進捗は [PLAN.md](./PLAN.md)、
 確定した事実は [NOTES.md](./NOTES.md) を参照。
@@ -54,6 +65,7 @@ python3 scripts/genCrsFixtures.py   # 座標変換の検証用固定値を PROJ 
 npm run dev
 npm i --no-save playwright-core pngjs && node scripts/e2e.mjs      # 住所検索と地図
 E2E_PORT=5178 node scripts/e2ePlan.mjs                             # 住所→ピン→PDF の動線
+E2E_PORT=5179 node scripts/e2eMoj.mjs                              # 実データを使った動線
 ```
 
 ## 印刷するときの注意

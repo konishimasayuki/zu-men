@@ -121,8 +121,24 @@ export interface Bounds {
   heightM: number;
 }
 
+/**
+ * 申請地だけの広がり。
+ *
+ * 用紙に収まるかは申請地で判断する。周辺の筆は図郭の外まで続いていて当然で、
+ * 図郭でクリップして端で切る前提だから、これを収まり判定に混ぜてはいけない。
+ * 混ぜると実データではほぼ必ず「収まらない」になる。
+ */
+export function subjectBoundsOf(scene: Scene): Bounds | null {
+  const pts = scene.parcels.filter((p) => p.isSubject).flatMap((p) => p.outline);
+  for (const b of scene.bands) pts.push(...b.outline);
+  return boundsOfPoints(pts);
+}
+
 export function boundsOf(scene: Scene): Bounds | null {
-  const pts = allPoints(scene);
+  return boundsOfPoints(allPoints(scene));
+}
+
+function boundsOfPoints(pts: readonly PlaneXY[]): Bounds | null {
   if (pts.length === 0) return null;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const p of pts) {

@@ -18,15 +18,32 @@ beforeAll(() => {
 });
 
 describe('用紙に収まるかの判定', () => {
-  it('参考図面の再現は A4 に収まらず A3 でも足りない', () => {
-    const scene = referenceScene();
-    const a4 = checkFit(scene, PAPER_SIZES.A4, 250);
-    expect(a4.fits).toBe(false);
+  it('既定は申請地で判定する。参考図面の申請地（44×31m）はA4に収まる', () => {
+    const a4 = checkFit(referenceScene(), PAPER_SIZES.A4, 250);
     expect(a4.frameWidthM).toBeCloseTo(65.5, 6);
     expect(a4.frameHeightM).toBeCloseTo(45.0, 6);
+    expect(a4.fits).toBe(true);
+  });
+
+  it('周辺まで含めると参考図面の再現はA4に収まらない', () => {
+    // 周辺は図郭でクリップする前提なので、これを既定の判定に混ぜない。
+    // 混ぜると実データではほぼ必ず「収まらない」になる。
+    const a4 = checkFit(referenceScene(), PAPER_SIZES.A4, 250, { includeSurroundings: true });
+    expect(a4.fits).toBe(false);
     // 収まらないときは必ず「より大きい用紙」を提案する。縮小印刷は提案しない。
     expect(a4.suggestion).not.toBeNull();
     expect(['A3', 'A2', 'A1']).toContain(a4.suggestion!.name);
+  });
+
+  it('申請地が大きすぎればA4で警告する', () => {
+    const scene = referenceScene();
+    // 申請地を倍に引き伸ばす
+    for (const p of scene.parcels.filter((q) => q.isSubject)) {
+      p.outline = p.outline.map((q) => ({ x: q.x * 1 + (q.x - 7348) * 2, y: q.y + (q.y + 28023) * 2 }));
+    }
+    const fit = checkFit(scene, PAPER_SIZES.A4, 250);
+    expect(fit.fits).toBe(false);
+    expect(fit.suggestion).not.toBeNull();
   });
 
   it('小さな敷地なら A4 に収まる', () => {

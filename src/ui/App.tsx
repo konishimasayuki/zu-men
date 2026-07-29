@@ -13,10 +13,13 @@ import { DEFAULT_SCALE_DENOMINATOR } from '../paper/transform';
 import { useCalibration, DEFAULT_NOMINAL_MM } from './useCalibration';
 import { SitePicker, SiteSelection } from './SitePicker';
 import { PlanPanel } from './PlanPanel';
+import { MojLoader } from './MojLoader';
+import type { MojParcel } from '../data/moj';
 
 export function App() {
   const [paperName, setPaperName] = useState<PaperSizeName>(DEFAULT_PAPER.name);
   const [site, setSite] = useState<SiteSelection | null>(null);
+  const [mojParcels, setMojParcels] = useState<MojParcel[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +65,11 @@ export function App() {
 
       <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #ddd' }} />
 
-      <PlanPanel site={site} calibration={cal.calibration} />
+      <MojLoader onLoaded={setMojParcels} />
+
+      <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #ddd' }} />
+
+      <PlanPanel site={site} calibration={cal.calibration} mojParcels={mojParcels} />
 
       <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #ddd' }} />
 

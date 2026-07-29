@@ -18,16 +18,21 @@ import { countStalls } from '../draw/parking';
 import { tsuboToM2, formatTsuboWithM2 } from '../draw/tsubo';
 import type { PrinterCalibration } from '../paper/calibration';
 import type { SiteSelection } from './SitePicker';
+import { MojParcel, parcelAt, precisionNote, isUsableForArea } from '../data/moj';
+import { buildSceneFromMoj, nearestParcel } from '../scenes/fromMoj';
+import { m2ToTsubo } from '../draw/tsubo';
 
 export interface PlanPanelProps {
   site: SiteSelection | null;
   calibration: PrinterCalibration | undefined;
+  /** 登記所備付地図から読み込んだ筆。空なら仮置きの矩形で描く。 */
+  mojParcels: MojParcel[];
 }
 
 /** 敷地の規模の候補。依頼者の対象2件。 */
 const PRESETS = [90, 143];
 
-export function PlanPanel({ site, calibration }: PlanPanelProps) {
+export function PlanPanel({ site, calibration, mojParcels }: PlanPanelProps) {
   const [tsubo, setTsubo] = useState(143);
   const [bearingDeg, setBearingDeg] = useState(80);
   const [chiban, setChiban] = useState('');
@@ -51,19 +56,42 @@ export function PlanPanel({ site, calibration }: PlanPanelProps) {
     );
   }
 
-  // ピンの位置が敷地の中心になる
+  // ピンの位置が図面の中心になる
   const center = toPlaneXY(site.position, site.zone);
-  const scene = makeSampleScene({
-    center,
-    tsubo,
-    bearingDeg,
-    chiban: chiban.trim() || '（地番未入力）',
-    chimoku,
-    owner: owner.trim(),
-    aspect: 1.45,
-    stallsPerBand: Math.max(2, Math.round((Math.sqrt(tsuboToM2(tsubo) * 1.45) - 5) / 2.5)),
-    bandCount: 2,
-  });
+
+  // 地図データを読み込んでいれば、ピンが指す実際の筆を申請地にする
+  const hit = mojParcels.length > 0
+    ? (parcelAt(mojParcels, site.position) ?? nearestParcel(mojParcels, site.position))
+    : null;
+
+  const built = hit
+    ? buildSceneFromMoj({
+        parcels: mojParcels,
+        subjects: [{
+          id: hit.id,
+          chimoku: chimoku.trim() || undefined,
+          owner: owner.trim() || undefined,
+        }],
+        zone: site.zone,
+        center,
+        paper,
+        scaleDenominator: DEFAULT_SCALE_DENOMINATOR,
+      })
+    : null;
+
+  const scene = built
+    ? built.scene
+    : makeSampleScene({
+        center,
+        tsubo,
+        bearingDeg,
+        chiban: chiban.trim() || '（地番未入力）',
+        chimoku,
+        owner: owner.trim(),
+        aspect: 1.45,
+        stallsPerBand: Math.max(2, Math.round((Math.sqrt(tsuboToM2(tsubo) * 1.45) - 5) / 2.5)),
+        bandCount: 2,
+      });
   const fit = checkFit(scene, paper, DEFAULT_SCALE_DENOMINATOR);
 
   async function output() {
@@ -78,7 +106,8 @@ export function PlanPanel({ site, calibration }: PlanPanelProps) {
         // 図面の外接矩形ではなく、指したピンを紙の中心に置く
         origin: originCenteredOn(center, paper, DEFAULT_SCALE_DENOMINATOR),
       });
-      downloadBytes(pdf, `計画平面図_${tsubo}坪_${paper.name}.pdf`);
+      const stem = hit ? hit.label : `${tsubo}坪`;
+      downloadBytes(pdf, `計画平面図_${stem}_${paper.name}.pdf`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -96,7 +125,29 @@ export function PlanPanel({ site, calibration }: PlanPanelProps) {
         縮尺1/{DEFAULT_SCALE_DENOMINATOR}で描きます。
       </p>
 
-      <div style={row}>
+      {hit && built && (
+        <div style={{ padding: '0.75rem 1rem', border: '1px solid #bcd8bc', background: '#eef7ee', margin: '0 0 1rem' }}>
+          <p style={{ margin: 0 }}>
+            申請地: <strong>{hit.label}</strong>（{hit.cityName}）
+          </p>
+          <p style={{ margin: '0.3rem 0 0', fontSize: '0.9rem' }}>
+            座標法による面積 <strong>{built.computedAreas[0]?.areaM2.toFixed(1)}㎡</strong>
+            （{m2ToTsubo(built.computedAreas[0]?.areaM2 ?? 0).toFixed(1)}坪）　
+            周辺 {built.neighbours.length}筆を描画
+          </p>
+          <p style={{ margin: '0.3rem 0 0', fontSize: '0.85rem', color: isUsableForArea(hit) ? '#060' : '#a00' }}>
+            {precisionNote(hit)}
+          </p>
+        </div>
+      )}
+
+      {!hit && (
+        <p style={{ fontSize: '0.9rem', color: '#a60' }}>
+          登記所備付地図をまだ読み込んでいません。敷地は下の設定で矩形の仮置きになります。
+        </p>
+      )}
+
+      <div style={{ ...row, display: hit ? 'none' : 'flex' }}>
         <span style={{ width: '6rem' }}>敷地の広さ</span>
         {PRESETS.map((t) => (
           <button
@@ -123,7 +174,7 @@ export function PlanPanel({ site, calibration }: PlanPanelProps) {
         <span style={{ color: '#555' }}>坪 ＝ {tsuboToM2(tsubo).toFixed(1)}㎡</span>
       </div>
 
-      <div style={row}>
+      <div style={{ ...row, display: hit ? 'none' : 'flex' }}>
         <span style={{ width: '6rem' }}>敷地の向き</span>
         <input
           type="range"
@@ -141,7 +192,13 @@ export function PlanPanel({ site, calibration }: PlanPanelProps) {
 
       <div style={row}>
         <span style={{ width: '6rem' }}>地番</span>
-        <input value={chiban} placeholder="44-4" onChange={(e) => setChiban(e.target.value)} style={{ width: '8rem', padding: '0.3rem' }} />
+        <input
+          value={hit ? hit.chiban : chiban}
+          placeholder="44-4"
+          disabled={!!hit}
+          onChange={(e) => setChiban(e.target.value)}
+          style={{ width: '8rem', padding: '0.3rem' }}
+        />
         <span>地目</span>
         <input value={chimoku} onChange={(e) => setChimoku(e.target.value)} style={{ width: '4rem', padding: '0.3rem' }} />
         <span>所有者</span>
@@ -163,8 +220,9 @@ export function PlanPanel({ site, calibration }: PlanPanelProps) {
       </div>
 
       <p style={{ fontSize: '0.9rem', color: '#555' }}>
-        {formatTsuboWithM2(tsubo)}・駐車{countStalls(scene.bands)}台。
-        敷地の形は矩形の仮置きです。実際の筆界は登記所備付地図を取り込んでから確定します。
+        {hit
+          ? `登記所備付地図の筆界で描いています。地目と所有者はこのデータに含まれないため、上で入力してください。`
+          : `${formatTsuboWithM2(tsubo)}・駐車${countStalls(scene.bands)}台。敷地の形は矩形の仮置きです。`}
       </p>
 
       <p>

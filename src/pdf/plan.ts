@@ -10,7 +10,7 @@ import {
 } from '../paper/layout';
 import { DEFAULT_SCALE_DENOMINATOR, PlaneXY } from '../paper/transform';
 import type { PrinterCalibration } from '../paper/calibration';
-import { Scene, boundsOf } from '../draw/scene';
+import { Scene, boundsOf, subjectBoundsOf } from '../draw/scene';
 import { createSheet } from './document';
 import { drawSheet } from './frame';
 import { Pen } from './pen';
@@ -39,9 +39,20 @@ export interface FitResult {
   suggestion: PaperSize | null;
 }
 
-/** 図面が用紙に収まるかを調べる。縮小印刷は提案しない。 */
-export function checkFit(scene: Scene, paper: PaperSize, scaleDenominator: number): FitResult {
-  const b = boundsOf(scene);
+/**
+ * 図面が用紙に収まるかを調べる。縮小印刷は提案しない。
+ *
+ * 既定では**申請地**の広がりで判定する。周辺の筆は図郭の外まで続いていて当然で、
+ * 図郭でクリップして端で切る前提だから、収まり判定に混ぜない。
+ * `includeSurroundings` を立てると図面全体で判定する。
+ */
+export function checkFit(
+  scene: Scene,
+  paper: PaperSize,
+  scaleDenominator: number,
+  opts: { includeSurroundings?: boolean } = {},
+): FitResult {
+  const b = opts.includeSurroundings ? boundsOf(scene) : (subjectBoundsOf(scene) ?? boundsOf(scene));
   const extent = frameExtentMeters(paper, scaleDenominator);
   const contentWidthM = b?.widthM ?? 0;
   const contentHeightM = b?.heightM ?? 0;
