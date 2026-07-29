@@ -125,16 +125,37 @@ describe('印刷補正', () => {
     expect(geom.heightMm).toBeCloseTo(210, 6);
   });
 
-  it('補正しても図郭が用紙からはみ出さない', async () => {
+  it('補正しても図枠が用紙からはみ出さない', async () => {
+    // 許容範囲の上限(-5%)いっぱいで補正しても図枠は紙に載る
     const geom = await readPageGeometry(
       await buildStage0Pdf(fontBytes, { calibration: { nominalMm: 200, measuredMm: 191 } }),
     );
-    const xs = geom.segments.flatMap((s) => [s.x1, s.x2]).map((v) => v / mmToPt(1));
-    const ys = geom.segments.flatMap((s) => [s.y1, s.y2]).map((v) => v / mmToPt(1));
+    // 図枠の辺（A4は262mm×180mm。補正で伸びる）だけを見る。
+    // 中心マークは定義上むしろ用紙の端から始まるので、ここでは対象外。
+    const factor = 200 / 191;
+    const frameSides = geom.segments.filter(
+      (s) => Math.abs(s.lengthMm - 262 * factor) < 0.1 || Math.abs(s.lengthMm - 180 * factor) < 0.1,
+    );
+    expect(frameSides.length).toBeGreaterThan(0);
+    const xs = frameSides.flatMap((s) => [s.x1, s.x2]).map((v) => v / mmToPt(1));
+    const ys = frameSides.flatMap((s) => [s.y1, s.y2]).map((v) => v / mmToPt(1));
     expect(Math.min(...xs)).toBeGreaterThanOrEqual(0);
     expect(Math.max(...xs)).toBeLessThanOrEqual(297);
     expect(Math.min(...ys)).toBeGreaterThanOrEqual(0);
     expect(Math.max(...ys)).toBeLessThanOrEqual(210);
+  });
+
+  it('中心マークが用紙の四辺の中央にある（JIS Z 8311）', async () => {
+    const geom = await readPageGeometry(await buildStage0Pdf(fontBytes));
+    const mm = (v: number) => v / mmToPt(1);
+    // 用紙の端(0 または 297/210)から始まる短い線が4本
+    const marks = geom.segments.filter((s) => {
+      const x1 = mm(s.x1), y1 = mm(s.y1);
+      const onEdge = Math.abs(x1) < 0.01 || Math.abs(x1 - 297) < 0.01
+        || Math.abs(y1) < 0.01 || Math.abs(y1 - 210) < 0.01;
+      return onEdge && s.lengthMm < 30;
+    });
+    expect(marks.length).toBe(4);
   });
 
   it('倍率が等倍なら座標変換を入れない', async () => {

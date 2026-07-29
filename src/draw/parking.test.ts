@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeBand, countStalls, DEFAULT_STALL } from './parking';
+import { makeBand, countStalls, DEFAULT_STALL, checkAisleWidth } from './parking';
 import { area } from '../geo/area';
 
 describe('駐車区画の割付', () => {
@@ -57,5 +57,23 @@ describe('駐車区画の割付', () => {
     expect(countStalls([band])).toBe(4);
     band.stalls[0].withCar = false;
     expect(countStalls([band])).toBe(3);
+  });
+});
+
+describe('車路幅の基準（駐車場法施行令第7条）', () => {
+  it('対面通行は5.5m以上', () => {
+    expect(checkAisleWidth(5.5, false).ok).toBe(true);
+    expect(checkAisleWidth(5.4, false).ok).toBe(false);
+    expect(checkAisleWidth(5.4, false).requiredM).toBe(5.5);
+  });
+
+  it('一方通行は3.5m以上', () => {
+    expect(checkAisleWidth(3.5, true).ok).toBe(true);
+    expect(checkAisleWidth(3.4, true).ok).toBe(false);
+    expect(checkAisleWidth(3.4, true).requiredM).toBe(3.5);
+  });
+
+  it('既定値は対面通行の下限を満たす', () => {
+    expect(checkAisleWidth(DEFAULT_STALL.aisleM, false).ok).toBe(true);
   });
 });

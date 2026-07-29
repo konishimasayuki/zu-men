@@ -10,6 +10,7 @@ import {
   pushGraphicsState, popGraphicsState, moveTo, lineTo, closePath, clip, endPath,
 } from 'pdf-lib';
 import { mmToPt } from '../paper/units';
+import { SURVEY_LINE_WIDTHS_MM, SIDE_DITCH_LINE_NUMBER } from '../draw/standards';
 
 export interface Pt2 {
   /** 紙面の横[mm]。右が正。 */
@@ -20,24 +21,36 @@ export interface Pt2 {
 
 export const BLACK: RGB = rgb(0, 0, 0);
 
-/** 線幅[mm]。図面全体でここに集約する。 */
+/**
+ * 線幅[mm]。**すべて公共測量標準図式 第7条の線号に一致させる。**
+ *
+ * 1号0.05 / 2号0.10 / 3号0.15 / 4号0.20 / 5号0.25 / 6号0.30 / 7号0.35 /
+ * 8号0.40 / 10号0.50。許容誤差は各線号を通じて±0.025mm。
+ * 中間の値（0.22や0.6など）は規格に無いので使わない。
+ *
+ * 図枠だけは JIS Z 8311「輪郭線は最小0.5mm」に従い10号(0.50mm)以上とする。
+ */
 export const LW = {
-  /** 図枠の外線 */
-  frameOuter: 0.6,
-  /** 図枠の内線 */
-  frameInner: 0.3,
-  /** 申請地の筆界。いちばん太い地物線 */
-  siteBoundary: 0.5,
-  /** 隣接筆の筆界 */
-  parcelBoundary: 0.25,
-  /** 道路・水路の輪郭 */
-  corridor: 0.25,
-  /** 車・記号 */
-  symbol: 0.22,
-  /** 区画の割り線 */
-  stall: 0.2,
-  /** 細線（ケバなど） */
-  hair: 0.18,
+  /** 図枠の外線。JIS Z 8311 の輪郭線。10号 */
+  frameOuter: SURVEY_LINE_WIDTHS_MM[10],
+  /** 図枠の内線。6号 */
+  frameInner: SURVEY_LINE_WIDTHS_MM[6],
+  /** 中心マーク。JIS Z 8311 は最小0.5mm。10号 */
+  centerMark: SURVEY_LINE_WIDTHS_MM[10],
+  /** 申請地の筆界。図面の主対象なので太い。8号 */
+  siteBoundary: SURVEY_LINE_WIDTHS_MM[8],
+  /** 隣接筆の筆界。5号 */
+  parcelBoundary: SURVEY_LINE_WIDTHS_MM[5],
+  /** 道路・水路の輪郭。5号 */
+  corridor: SURVEY_LINE_WIDTHS_MM[5],
+  /** 側溝。図式で3号と定められている */
+  sideDitch: SURVEY_LINE_WIDTHS_MM[SIDE_DITCH_LINE_NUMBER],
+  /** 車・記号。4号 */
+  symbol: SURVEY_LINE_WIDTHS_MM[4],
+  /** 区画の割り線。4号 */
+  stall: SURVEY_LINE_WIDTHS_MM[4],
+  /** 細線（法面のケバ、構囲など）。3号 */
+  hair: SURVEY_LINE_WIDTHS_MM[3],
 } as const;
 
 export function add(a: Pt2, dx: number, dy: number): Pt2 {

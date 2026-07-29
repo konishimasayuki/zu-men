@@ -1,18 +1,43 @@
 /**
  * 駐車区画の割付。
  *
- * 標準区画 2.5m×5.0m、車路幅 5.5m（CLAUDE.md 第3段階の既定値）。
+ * 寸法は駐車場法施行令第7条および駐車場設計・施工指針による。
+ * - 普通乗用車の駐車マス: 幅2.5m × 奥行5.0m
+ * - 車路の幅員: 対面通行 5.5m以上、一方通行 3.5m以上
+ *
  * 参考図面は車路の両側に直角駐車の帯を並べた形をしている。
  */
 
 import type { PlaneXY } from '../paper/transform';
 import type { StallBand, Stall } from './scene';
+import { PARKING_STANDARDS, isAisleWidthValid } from './standards';
 
 export const DEFAULT_STALL = {
-  widthM: 2.5,
-  depthM: 5.0,
-  aisleM: 5.5,
+  widthM: PARKING_STANDARDS.stall.widthM,
+  depthM: PARKING_STANDARDS.stall.depthM,
+  /** 既定は対面通行の下限。一方通行なら3.5mまで詰められる。 */
+  aisleM: PARKING_STANDARDS.aisle.twoWayMinM,
 } as const;
+
+export interface AisleCheck {
+  widthM: number;
+  oneWay: boolean;
+  requiredM: number;
+  ok: boolean;
+}
+
+/**
+ * 車路幅が駐車場法施行令の基準を満たすか調べる。
+ * 満たさない値をそのまま図面に出すと、審査で差し戻される。
+ */
+export function checkAisleWidth(widthM: number, oneWay: boolean): AisleCheck {
+  return {
+    widthM,
+    oneWay,
+    requiredM: oneWay ? PARKING_STANDARDS.aisle.oneWayMinM : PARKING_STANDARDS.aisle.twoWayMinM,
+    ok: isAisleWidthValid(widthM, oneWay),
+  };
+}
 
 export interface BandSpec {
   /** 帯の起点（帯の一方の角。車路側の縁の端）。 */

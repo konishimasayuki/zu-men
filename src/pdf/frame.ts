@@ -9,15 +9,20 @@
 import { PDFPage, PDFFont, rgb } from 'pdf-lib';
 import { mmToPt } from '../paper/units';
 import { PaperSize, frameOf, FRAME_INNER_OFFSET_MM, TITLE_BOX_MM, NORTH_MARK_MM } from '../paper/layout';
+import { SURVEY_LINE_WIDTHS_MM, JIS_Z8311 } from '../draw/standards';
 
 const BLACK = rgb(0, 0, 0);
 
-/** 線幅[mm]。図面用の細線。 */
+/**
+ * 線幅[mm]。公共測量標準図式 第7条の線号に一致させる。
+ * 図枠は JIS Z 8311「輪郭線は最小0.5mm」に従い10号(0.50mm)。
+ */
 export const LINE_WIDTH_MM = {
-  frameOuter: 0.6,
-  frameInner: 0.3,
-  box: 0.3,
-  symbol: 0.25,
+  frameOuter: SURVEY_LINE_WIDTHS_MM[10],
+  frameInner: SURVEY_LINE_WIDTHS_MM[6],
+  centerMark: SURVEY_LINE_WIDTHS_MM[10],
+  box: SURVEY_LINE_WIDTHS_MM[6],
+  symbol: SURVEY_LINE_WIDTHS_MM[5],
 } as const;
 
 export interface FrameOptions {
@@ -136,12 +141,33 @@ export function drawNorthMark(page: PDFPage, size: PaperSize): void {
 }
 
 /**
+ * 中心マーク。JIS Z 8311 が定める図面の要素。
+ * 用紙の四辺の中央から、輪郭線の内側へ約5mm入ったところまで引く。
+ * 図面の複写や折りたたみの基準になる。
+ */
+export function drawCenterMarks(page: PDFPage, size: PaperSize): void {
+  const f = frameOf(size);
+  const reach = JIS_Z8311.centerMark.reachMm;
+  const w = LINE_WIDTH_MM.centerMark;
+  const cx = size.widthMm / 2;
+  const cy = size.heightMm / 2;
+
+  // 下辺・上辺
+  line(page, cx, 0, cx, f.yMm + reach, w);
+  line(page, cx, size.heightMm, cx, f.yMm + f.heightMm - reach, w);
+  // 左辺・右辺
+  line(page, 0, cy, f.xMm + reach, cy, w);
+  line(page, size.widthMm, cy, f.xMm + f.widthMm - reach, cy, w);
+}
+
+/**
  * 図枠まわりを一括で描く。
  *
  * 右下の表題欄は描かない。参考図面には空欄の枠があるが、依頼者の指示により省く。
  */
 export function drawSheet(page: PDFPage, opts: FrameOptions): void {
   drawFrame(page, opts.size);
+  drawCenterMarks(page, opts.size);
   drawTitle(page, opts.size, opts.font, opts.title ?? '計画平面図　S＝1/250');
   drawNorthMark(page, opts.size);
 }
