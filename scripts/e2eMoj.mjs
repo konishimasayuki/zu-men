@@ -8,9 +8,9 @@ import { readFileSync } from 'node:fs';
 
 const OUT = process.env.E2E_OUT ?? '.';
 const PORT = process.env.E2E_PORT ?? '5179';
-const FIXTURE = 'src/data/__fixtures__/moj_kounosu_sample.json';
+const FIXTURE = process.env.E2E_MOJ ?? 'src/data/__fixtures__/moj_kounosu_sample.json';
 /** 抜粋データの中心。ここにピンを置く。 */
-const PIN = { lat: 36.09, lon: 139.472 };
+const PIN = { lat: Number(process.env.E2E_LAT ?? 36.09), lon: Number(process.env.E2E_LON ?? 139.472) };
 
 function tile() {
   const png = new PNG({ width: 256, height: 256 });
@@ -24,7 +24,7 @@ function tile() {
 const TILE = tile();
 const HIT = JSON.stringify([
   { geometry: { coordinates: [PIN.lon, PIN.lat], type: 'Point' }, type: 'Feature',
-    properties: { addressCode: '', title: '埼玉県鴻巣市' } },
+    properties: { addressCode: '', title: process.env.E2E_ADDR ?? '埼玉県鴻巣市' } },
 ]);
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -37,7 +37,7 @@ await page.route('**://msearch.gsi.go.jp/**', r => r.fulfill({ contentType: 'app
 
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded' });
 
-await page.getByLabel('住所').fill('埼玉県鴻巣市');
+await page.getByLabel('住所').fill(process.env.E2E_ADDR ?? '埼玉県鴻巣市');
 await page.getByRole('button', { name: '住所を検索' }).click();
 await page.waitForSelector('ul button', { timeout: 10000 });
 await page.locator('ul button').first().click();
@@ -45,9 +45,11 @@ await page.waitForSelector('text=平面直角座標系の確認', { timeout: 100
 console.log('1. 住所検索 → ピン設置        OK');
 
 await page.getByLabel('登記所備付地図のGeoJSON').setInputFiles(FIXTURE);
-await page.waitForSelector('text=読み込んだ筆数', { timeout: 30000 });
+const tLoad = Date.now();
+await page.waitForSelector('text=読み込んだ筆数', { timeout: 180000 });
+const loadSec = ((Date.now() - tLoad) / 1000).toFixed(1);
 const summary = (await page.locator('text=読み込んだ筆数').locator('..').innerText()).replace(/\s+/g, ' ');
-console.log('2. 地図データ読み込み          OK');
+console.log(`2. 地図データ読み込み          OK  ${loadSec}秒`);
 console.log('   ' + summary);
 
 await page.waitForSelector('text=申請地:', { timeout: 10000 });

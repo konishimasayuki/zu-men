@@ -200,12 +200,19 @@ export interface ParkingLayout {
   aisleM: number;
 }
 
+/** 向きの総当たりの刻み[度]。 */
+export const BEARING_STEP_DEG = 5;
+
 /**
  * 敷地の多角形に区画を割り付ける。
  *
- * マスを並べる向きは、最小面積外接矩形の長手方向と、それに直交する向きの
- * 両方を試して台数の多い方を採る。実データの筆は正方形に近いことがあり、
- * 長手方向が有利とは限らないため。`bearingDeg` を渡した場合はその向きだけ。
+ * マスを並べる向きは**総当たりで決める。** 最初は最小面積外接矩形の長手方向と
+ * その直交方向だけを試していたが、実データで測ると取りこぼしが大きかった
+ * （鴻巣327で16台→22台、鴻巣441で17台→20台）。実データの筆は矩形ではないので、
+ * 外接矩形の向きが最良とは限らない。
+ *
+ * 同数なら外接矩形の向きを優先する。敷地の形に沿った、見て自然な割り付けになる。
+ * `bearingDeg` を渡した場合はその向きだけを使う。
  *
  * 敷地からはみ出すマスは落とすので、隅の欠けた形でも破綻しない。
  */
@@ -216,9 +223,17 @@ export function layoutParking(
   if (opts.bearingDeg !== undefined) return layoutParkingAt(outline, opts.bearingDeg, opts);
 
   const box = minimumAreaRectangle(outline);
-  const a = layoutParkingAt(outline, box.bearingDeg, opts);
-  const b = layoutParkingAt(outline, normaliseBearing(box.bearingDeg + 90), opts);
-  return b.count > a.count ? b : a;
+  // 外接矩形の向きを先に置く。以降は「厳密に多いときだけ」置き換えるので、
+  // 同数ならこちらが残る。
+  const candidates = [box.bearingDeg, normaliseBearing(box.bearingDeg + 90)];
+  for (let d = 0; d < 180; d += BEARING_STEP_DEG) candidates.push(d);
+
+  let best = layoutParkingAt(outline, candidates[0], opts);
+  for (const deg of candidates.slice(1)) {
+    const cur = layoutParkingAt(outline, deg, opts);
+    if (cur.count > best.count) best = cur;
+  }
+  return best;
 }
 
 /** 向きを1つ決めて割り付ける。 */
@@ -295,12 +310,38 @@ function layoutParkingAt(
     };
   }
 
+  /**
+   * 車路そのものが敷地の内側に収まるか。
+   *
+   * 局所座標の外接範囲だけで判定すると、向きを斜めに振ったときに
+   * 「外接範囲には入るが敷地には入らない」車路を通してしまう。
+   * 幅 aisle・長さ（マスの並ぶ範囲）の帯として、実際に敷地に入るかを見る。
+   */
+  function aisleFits(ua: number, ub: number, v0: number): boolean {
+    if (ub - ua < aisle) return false;
+    const steps = Math.max(2, Math.ceil((ub - ua) / 1.0));
+    for (let i = 0; i <= steps; i++) {
+      const u = ua + ((ub - ua) * i) / steps;
+      for (const v of [v0, v0 + aisle]) {
+        if (!pointInPolygon(outline, toWorld(u, v))) return false;
+      }
+    }
+    return true;
+  }
+
   /** 帯の並びを記録し、車路の注記位置を残す。 */
   function pushAisle(rows: Array<StallBand | null>, v0: number) {
     const us = rows.flatMap((b) => (b ? b.stalls.map((s) => toLocal(s.center).u) : []));
     if (us.length === 0) return;
     // 車路の注記は、実際に残ったマスの真ん中に置く
     aisleCenters.push(toWorld((Math.min(...us) + Math.max(...us)) / 2, v0 + aisle / 2));
+  }
+
+  /** その塊のマスが並ぶ u の範囲。車路の長さになる。 */
+  function uSpan(rows: Array<StallBand | null>): [number, number] | null {
+    const us = rows.flatMap((b) => (b ? b.stalls.map((s) => toLocal(s.center).u) : []));
+    if (us.length === 0) return null;
+    return [Math.min(...us) - stallW / 2, Math.max(...us) + stallW / 2];
   }
 
   // 短手方向に「帯・車路・帯」の塊を積む。塊どうしは背中合わせに詰める
@@ -311,9 +352,14 @@ function layoutParkingAt(
     if (v + moduleDepth <= maxV) {
       const near = makeRow(v, true);
       const far = makeRow(v + stallD + aisle, false);
-      if (near) bands.push(near);
-      if (far) bands.push(far);
-      pushAisle([near, far], v + stallD);
+      const span = uSpan([near, far]);
+      // 車路が敷地に収まらない塊は、マスごと捨てる。
+      // 出入りできない区画を台数に数えるのは嘘になる。
+      if (span && aisleFits(span[0], span[1], v + stallD)) {
+        if (near) bands.push(near);
+        if (far) bands.push(far);
+        pushAisle([near, far], v + stallD);
+      }
       v += moduleDepth;
       continue;
     }
@@ -321,8 +367,11 @@ function layoutParkingAt(
     // 車路の付かない帯は出入りできないので作らない。
     if (v + stallD + aisle <= maxV) {
       const row = makeRow(v, true);
-      if (row) bands.push(row);
-      pushAisle([row], v + stallD);
+      const span = uSpan([row]);
+      if (row && span && aisleFits(span[0], span[1], v + stallD)) {
+        bands.push(row);
+        pushAisle([row], v + stallD);
+      }
     }
     break;
   }

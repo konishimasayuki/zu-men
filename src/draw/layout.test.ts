@@ -181,6 +181,29 @@ describe('layoutParking', () => {
     expect(layout.bands).toHaveLength(0);
   });
 
+  it('斜めに振っても、車路が敷地に収まらない細長い敷地には置かない', () => {
+    // 向きを総当たりすると、外接範囲だけを見ていた頃は斜めの向きで
+    // 「外接範囲には入るが敷地には入らない」車路を通してしまっていた。
+    for (const bearing of [0, 17, 45, 62, 90, 133]) {
+      const strip = rotatedRect(40, 6, bearing);
+      expect(layoutParking(strip).count).toBe(0);
+    }
+  });
+
+  it('向きは総当たりするので、外接矩形の向きより悪くならない', () => {
+    const site: PlaneXY[] = [
+      { x: 0, y: 0 },
+      { x: 2, y: 26 },
+      { x: 27, y: 29 },
+      { x: 29, y: 6 },
+      { x: 14, y: -2 },
+    ];
+    const box = minimumAreaRectangle(site);
+    const swept = layoutParking(site);
+    const fixed = layoutParking(site, { bearingDeg: box.bearingDeg });
+    expect(swept.count).toBeGreaterThanOrEqual(fixed.count);
+  });
+
   it('狭すぎる敷地では0台', () => {
     expect(layoutParking(rect(2, 2)).count).toBe(0);
   });
@@ -337,5 +360,15 @@ describe('実データの筆への割り付け', () => {
     expect(tried).toBe(60);
     // 全部が0台ということは無い（実データに十分な広さの筆がある）
     expect(withStalls).toBeGreaterThan(0);
+  });
+
+  it('向きの総当たりが実データでも効く', () => {
+    const p = parcels.find((q) => q.chiban === '327')!;
+    const outline = p.outline.map((q) => toPlaneXY(q, 9));
+    const box = minimumAreaRectangle(outline);
+    const swept = layoutParking(outline);
+    const alongBox = layoutParking(outline, { bearingDeg: box.bearingDeg });
+    const acrossBox = layoutParking(outline, { bearingDeg: (box.bearingDeg + 90) % 180 });
+    expect(swept.count).toBeGreaterThan(Math.max(alongBox.count, acrossBox.count));
   });
 });

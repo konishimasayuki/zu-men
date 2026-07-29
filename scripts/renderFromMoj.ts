@@ -1,7 +1,7 @@
 /** 実データ（登記所備付地図）から計画平面図を出す。検収基準5の確認を兼ねる。 */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadMojGeoJson, summarise, parcelAt, roughCentroid, precisionNote } from '../src/data/moj';
+import { loadMojGeoJson, summarise, parcelAt, roughCentroid, roughDistanceM, precisionNote, isUsableForArea } from '../src/data/moj';
 import { buildSceneFromMoj, nearestParcel } from '../src/scenes/fromMoj';
 import { toPlaneXY, zoneLabel } from '../src/geo/crs';
 import { buildPlanPdf, originCenteredOn, checkFit } from '../src/pdf/plan';
@@ -28,8 +28,12 @@ const PIN = { lon: Number(process.argv[3] ?? 139.472), lat: Number(process.argv[
 const subject = parcelAt(parcels, PIN) ?? nearestParcel(parcels, PIN)!;
 console.log(`ピン ${PIN.lat}, ${PIN.lon} → 申請地 ${subject.label}`);
 console.log(`  ${precisionNote(subject)}`);
+console.log(`  求積に使えるか: ${isUsableForArea(subject) ? 'はい（測量成果）' : 'いいえ（公図由来。求積は地積測量図で確定すること）'}`);
 
-const center = toPlaneXY(roughCentroid(subject.outline), ZONE);
+// 図面の中心はピンそのもの。アプリ（PlanPanel）と同じ挙動にする。
+// 申請地の重心に寄せると「ピンを指した場所の図面」ではなくなる。
+const center = toPlaneXY(PIN, ZONE);
+console.log(`  申請地の重心はピンから ${roughDistanceM(roughCentroid(subject.outline), PIN).toFixed(1)}m`);
 for (const paperName of ['A4', 'A3'] as const) {
   const paper = PAPER_SIZES[paperName];
   const r = buildSceneFromMoj({
@@ -48,6 +52,8 @@ for (const paperName of ['A4', 'A3'] as const) {
     `面積(座標法) ${a.areaM2.toFixed(1)}㎡ = ${m2ToTsubo(a.areaM2).toFixed(1)}坪`,
   );
   console.log(`     図面 ${fit.contentWidthM.toFixed(1)}×${fit.contentHeightM.toFixed(1)}m / 図郭 ${fit.frameWidthM.toFixed(1)}×${fit.frameHeightM.toFixed(1)}m`);
-  console.log(`     駐車区画 ${r.stallCount}台（帯${r.scene.bands.length}列・通路注記${r.scene.notes.length}）`);
+  const n = (t: string) => r.scene.notes.filter((q) => q.text === t).length;
+  console.log(`     駐車区画 ${r.stallCount}台（帯${r.scene.bands.length}列・通路${n('通路')}）` +
+    `　進入口${n('進入口')}・放流先${n('雨水放流先')}・桝${r.scene.basins.length}・矢印${r.scene.arrows.length}`);
   console.log(`     ${file} (${pdf.length.toLocaleString()}バイト)`);
 }
