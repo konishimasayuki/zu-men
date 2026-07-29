@@ -25,10 +25,20 @@ npx vite-node scripts/emit.ts
 - `計画平面図_第0段階_A4.pdf` — 20m正方形1つだけの図面
 - `縮尺検証シート_A4.pdf` — 100mm・200mm・80mmの基準線
 
-PDFの実効寸法を測って表示する（印刷補正の効きの確認）。
+検証用スクリプト。
 
 ```sh
-npx vite-node scripts/calcheck.ts
+npx vite-node scripts/calcheck.ts   # 印刷補正の効きを実測
+npx vite-node scripts/crscheck.ts   # proj4js と PROJ の一致度を実測
+npx vite-node scripts/gsicheck.ts   # 地理院の住所検索APIを実データで確認
+python3 scripts/genCrsFixtures.py   # 座標変換の検証用固定値を PROJ から再生成（要 pyproj）
+```
+
+ブラウザで実際に操作して確かめる。地理院への通信は stub する。
+
+```sh
+npm run dev
+npm i --no-save playwright-core pngjs && node scripts/e2e.mjs
 ```
 
 ## 印刷するときの注意

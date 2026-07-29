@@ -10,6 +10,7 @@ import { PAPER_SIZES, PAPER_ORDER, DEFAULT_PAPER, frameExtentMeters } from '../p
 import type { PaperSizeName } from '../paper/layout';
 import { DEFAULT_SCALE_DENOMINATOR } from '../paper/transform';
 import { useCalibration, DEFAULT_NOMINAL_MM } from './useCalibration';
+import { SitePicker, SiteSelection } from './SitePicker';
 
 function download(bytes: Uint8Array, filename: string) {
   const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
@@ -23,6 +24,7 @@ function download(bytes: Uint8Array, filename: string) {
 
 export function App() {
   const [paperName, setPaperName] = useState<PaperSizeName>(DEFAULT_PAPER.name);
+  const [site, setSite] = useState<SiteSelection | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,12 +59,16 @@ export function App() {
   }
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 720, margin: '2rem auto', padding: '0 1rem', lineHeight: 1.7 }}>
-      <h1 style={{ fontSize: '1.4rem' }}>計画平面図 作成（第0段階）</h1>
+    <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 860, margin: '2rem auto', padding: '0 1rem', lineHeight: 1.7 }}>
+      <h1 style={{ fontSize: '1.4rem' }}>計画平面図 作成</h1>
       <p>
-        縮尺1/250とフォント埋め込みの実証だけを行う段階です。20.000m×20.000mの正方形を1つ描いた
-        PDFを出します。敷地データの取り込みは第1段階で入ります。
+        住所から対象地を決め、平面直角座標系を確定します。筆界の取り込みと作図は順次入ります。
+        いま出力できるPDFは20.000m×20.000mの正方形1つだけの検証用です。
       </p>
+
+      <SitePicker value={site} onChange={setSite} />
+
+      <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #ddd' }} />
 
       <h2 style={{ fontSize: '1.1rem', marginTop: '2rem' }}>用紙</h2>
       <p>
