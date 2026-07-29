@@ -101,11 +101,12 @@ export const TITLE_BOX_MM = {
   centerRightShiftMm: 30,
 } as const;
 
-/** 表題欄（右下の枠）。中身はユーザーが入力する。 */
-export const TITLE_BLOCK_MM = {
-  widthMm: 90,
-  heightMm: 28,
-} as const;
+/**
+ * 表題欄（右下の枠）は描かない。
+ *
+ * 参考図面には空欄の枠が1つあるが、依頼者の指示により本アプリでは出力しない。
+ * 復活させる場合は git 履歴の drawTitleBlock を参照。
+ */
 
 /** 方位記号。左上。 */
 export const NORTH_MARK_MM = {

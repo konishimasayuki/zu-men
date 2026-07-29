@@ -18,13 +18,7 @@ mkdirSync(OUT, { recursive: true });
 
 const fontBytes = new Uint8Array(readFileSync(resolve(import.meta.dirname, '../public/fonts/ipaexg.ttf')));
 
-const plan = await buildStage0Pdf(fontBytes, {
-  titleBlockRows: [
-    { label: '会社名', value: '' },
-    { label: '作成日', value: '' },
-    { label: '作成者', value: '' },
-  ],
-});
+const plan = await buildStage0Pdf(fontBytes);
 const calib = await buildCalibrationPdf(fontBytes);
 
 writeFileSync(resolve(OUT, '計画平面図_第0段階_A4.pdf'), plan);

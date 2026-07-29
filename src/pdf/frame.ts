@@ -8,14 +8,7 @@
 
 import { PDFPage, PDFFont, rgb } from 'pdf-lib';
 import { mmToPt } from '../paper/units';
-import {
-  PaperSize,
-  frameOf,
-  FRAME_INNER_OFFSET_MM,
-  TITLE_BOX_MM,
-  TITLE_BLOCK_MM,
-  NORTH_MARK_MM,
-} from '../paper/layout';
+import { PaperSize, frameOf, FRAME_INNER_OFFSET_MM, TITLE_BOX_MM, NORTH_MARK_MM } from '../paper/layout';
 
 const BLACK = rgb(0, 0, 0);
 
@@ -27,19 +20,11 @@ export const LINE_WIDTH_MM = {
   symbol: 0.25,
 } as const;
 
-/** 表題欄の1行。項目名と値はユーザーが入力する。 */
-export interface TitleBlockRow {
-  label: string;
-  value: string;
-}
-
 export interface FrameOptions {
   size: PaperSize;
   font: PDFFont;
   /** 表題。既定は「計画平面図　S＝1/250」 */
   title?: string;
-  /** 右下の表題欄の中身。空配列なら罫線だけ引く。 */
-  titleBlockRows?: readonly TitleBlockRow[];
 }
 
 function rect(page: PDFPage, xMm: number, yMm: number, wMm: number, hMm: number, widthMm: number) {
@@ -141,45 +126,12 @@ export function drawNorthMark(page: PDFPage, size: PaperSize): void {
 }
 
 /**
- * 表題欄。右下。中身はユーザーが入力する。
- * 行が無ければ外枠だけを引き、参考図面と同じ空欄の状態にする。
+ * 図枠まわりを一括で描く。
+ *
+ * 右下の表題欄は描かない。参考図面には空欄の枠があるが、依頼者の指示により省く。
  */
-export function drawTitleBlock(
-  page: PDFPage,
-  size: PaperSize,
-  font: PDFFont,
-  rows: readonly TitleBlockRow[],
-): void {
-  const f = frameOf(size);
-  const o = FRAME_INNER_OFFSET_MM;
-  const w = TITLE_BLOCK_MM.widthMm;
-  const h = TITLE_BLOCK_MM.heightMm;
-  const x = f.xMm + f.widthMm - o - w;
-  const y = f.yMm + o;
-
-  rect(page, x, y, w, h, LINE_WIDTH_MM.box);
-  if (rows.length === 0) return;
-
-  const rowH = h / rows.length;
-  const labelW = w * 0.36;
-  const fontSize = mmToPt(3.0);
-
-  rows.forEach((row, i) => {
-    // 上の行から順に描く
-    const rowY = y + h - rowH * (i + 1);
-    if (i > 0) line(page, x, rowY + rowH, x + w, rowY + rowH, LINE_WIDTH_MM.box);
-    line(page, x + labelW, rowY, x + labelW, rowY + rowH, LINE_WIDTH_MM.box);
-
-    const textY = mmToPt(rowY + rowH / 2 - 1.1);
-    page.drawText(row.label, { x: mmToPt(x + 2), y: textY, size: fontSize, font, color: BLACK });
-    page.drawText(row.value, { x: mmToPt(x + labelW + 2), y: textY, size: fontSize, font, color: BLACK });
-  });
-}
-
-/** 図枠まわりを一括で描く。 */
 export function drawSheet(page: PDFPage, opts: FrameOptions): void {
   drawFrame(page, opts.size);
   drawTitle(page, opts.size, opts.font, opts.title ?? '計画平面図　S＝1/250');
   drawNorthMark(page, opts.size);
-  drawTitleBlock(page, opts.size, opts.font, opts.titleBlockRows ?? []);
 }

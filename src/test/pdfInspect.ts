@@ -66,9 +66,33 @@ export interface PageGeometry {
   heightPt: number;
   widthMm: number;
   heightMm: number;
+  /** すべて座標変換行列(CTM)を適用したあとの、実際に紙に載る位置と長さ。 */
   segments: Segment[];
-  /** 現在の座標変換行列が単位行列以外に変更された回数。0であるべき。 */
+  /** 拡大縮小を伴う座標変換の回数。印刷補正が無効なら0であるべき。 */
   nonIdentityCtmCount: number;
+  /** 検出した拡大縮小の倍率。等倍なら空配列。 */
+  ctmScales: number[];
+}
+
+/** PDFの座標変換行列 [a b c d e f]。 */
+type Matrix = [number, number, number, number, number, number];
+
+const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
+
+/** m を先に、次に n を適用する合成（PDFの cm と同じ順序）。 */
+function multiply(m: Matrix, n: Matrix): Matrix {
+  return [
+    m[0] * n[0] + m[1] * n[2],
+    m[0] * n[1] + m[1] * n[3],
+    m[2] * n[0] + m[3] * n[2],
+    m[2] * n[1] + m[3] * n[3],
+    m[4] * n[0] + m[5] * n[2] + n[4],
+    m[4] * n[1] + m[5] * n[3] + n[5],
+  ];
+}
+
+function apply(m: Matrix, x: number, y: number): [number, number] {
+  return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 }
 
 function segment(x1: number, y1: number, x2: number, y2: number): Segment {
@@ -115,6 +139,13 @@ export async function readPageGeometry(pdfBytes: Uint8Array): Promise<PageGeomet
 
   const segments: Segment[] = [];
   let nonIdentityCtmCount = 0;
+  const ctmScales: number[] = [];
+
+  // 現在の座標変換行列と、q / Q のためのスタック。
+  // 線分の長さは必ずCTMを適用してから測る。そうしないと cm による
+  // 拡大縮小を見逃し、「80mmと書いてあるが実際は80.8mm」を通してしまう。
+  let ctm: Matrix = [...IDENTITY] as Matrix;
+  const ctmStack: Matrix[] = [];
 
   const tokens = text.split(/\s+/).filter((t) => t.length > 0);
   const stack: number[] = [];
@@ -122,6 +153,12 @@ export async function readPageGeometry(pdfBytes: Uint8Array): Promise<PageGeomet
   let curY = 0;
   let startX = 0;
   let startY = 0;
+
+  const seg = (x1: number, y1: number, x2: number, y2: number) => {
+    const [ax, ay] = apply(ctm, x1, y1);
+    const [bx, by] = apply(ctm, x2, y2);
+    segments.push(segment(ax, ay, bx, by));
+  };
 
   for (const tok of tokens) {
     const num = Number(tok);
@@ -141,31 +178,42 @@ export async function readPageGeometry(pdfBytes: Uint8Array): Promise<PageGeomet
       }
       case 'l': {
         const [x, y] = stack.slice(-2);
-        segments.push(segment(curX, curY, x, y));
+        seg(curX, curY, x, y);
         curX = x;
         curY = y;
         break;
       }
       case 'h': {
-        if (curX !== startX || curY !== startY) {
-          segments.push(segment(curX, curY, startX, startY));
-        }
+        if (curX !== startX || curY !== startY) seg(curX, curY, startX, startY);
         curX = startX;
         curY = startY;
         break;
       }
       case 're': {
         const [x, y, w, h] = stack.slice(-4);
-        segments.push(segment(x, y, x + w, y));
-        segments.push(segment(x + w, y, x + w, y + h));
-        segments.push(segment(x + w, y + h, x, y + h));
-        segments.push(segment(x, y + h, x, y));
+        seg(x, y, x + w, y);
+        seg(x + w, y, x + w, y + h);
+        seg(x + w, y + h, x, y + h);
+        seg(x, y + h, x, y);
+        break;
+      }
+      case 'q': {
+        ctmStack.push([...ctm] as Matrix);
+        break;
+      }
+      case 'Q': {
+        const popped = ctmStack.pop();
+        if (popped) ctm = popped;
         break;
       }
       case 'cm': {
-        const [a, b, c, d] = stack.slice(-6);
-        const isIdentityScale = a === 1 && b === 0 && c === 0 && d === 1;
-        if (!isIdentityScale) nonIdentityCtmCount++;
+        const [a, b, c, d, e, f] = stack.slice(-6);
+        const m: Matrix = [a, b, c, d, e, f];
+        if (!(a === 1 && b === 0 && c === 0 && d === 1)) {
+          nonIdentityCtmCount++;
+          ctmScales.push(Math.hypot(a, b));
+        }
+        ctm = multiply(m, ctm);
         break;
       }
       default:
@@ -181,6 +229,7 @@ export async function readPageGeometry(pdfBytes: Uint8Array): Promise<PageGeomet
     heightMm: ptToMm(heightPt),
     segments,
     nonIdentityCtmCount,
+    ctmScales,
   };
 }
 

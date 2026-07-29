@@ -13,8 +13,9 @@ import { mmToPt } from '../paper/units';
 import { DEFAULT_PAPER, PaperSize, frameOf } from '../paper/layout';
 import { DEFAULT_SCALE_DENOMINATOR, createProjector, metersToPaperMm } from '../paper/transform';
 import type { PlaneXY } from '../paper/transform';
+import type { PrinterCalibration } from '../paper/calibration';
 import { createSheet } from './document';
-import { drawSheet, LINE_WIDTH_MM, TitleBlockRow } from './frame';
+import { drawSheet, LINE_WIDTH_MM } from './frame';
 
 const BLACK = rgb(0, 0, 0);
 
@@ -39,7 +40,8 @@ export interface Stage0Options {
   scaleDenominator?: number;
   /** 用紙。既定は依頼者のプリンタに合わせてA4横。 */
   paper?: PaperSize;
-  titleBlockRows?: readonly TitleBlockRow[];
+  /** 印刷補正。未指定なら補正なし（データ上も1/250）。 */
+  calibration?: PrinterCalibration;
 }
 
 /** 20m正方形1つだけの図面PDF。 */
@@ -49,14 +51,9 @@ export async function buildStage0Pdf(
 ): Promise<Uint8Array> {
   const scale = opts.scaleDenominator ?? DEFAULT_SCALE_DENOMINATOR;
   const size = opts.paper ?? DEFAULT_PAPER;
-  const { doc, page, font } = await createSheet(size, fontBytes);
+  const { doc, page, font } = await createSheet(size, fontBytes, opts.calibration);
 
-  drawSheet(page, {
-    size,
-    font,
-    title: `計画平面図　S＝1/${scale}`,
-    titleBlockRows: opts.titleBlockRows ?? [],
-  });
+  drawSheet(page, { size, font, title: `計画平面図　S＝1/${scale}` });
 
   // 正方形を図郭の中央に置く
   const f = frameOf(size);
@@ -109,9 +106,10 @@ export function buildCalibrationNote(size: PaperSize): string[] {
 export async function buildCalibrationPdf(
   fontBytes: Uint8Array | ArrayBuffer,
   paper: PaperSize = DEFAULT_PAPER,
+  calibration?: PrinterCalibration,
 ): Promise<Uint8Array> {
   const size = paper;
-  const { doc, page, font } = await createSheet(size, fontBytes);
+  const { doc, page, font } = await createSheet(size, fontBytes, calibration);
   const f = frameOf(size);
 
   drawSheet(page, { size, font, title: `縮尺検証シート　${size.name}　S＝1/250` });

@@ -9,7 +9,7 @@ import { buildStage0Pdf, buildCalibrationPdf } from '../pdf/stage0';
 import { PAPER_SIZES, PAPER_ORDER, DEFAULT_PAPER, frameExtentMeters } from '../paper/layout';
 import type { PaperSizeName } from '../paper/layout';
 import { DEFAULT_SCALE_DENOMINATOR } from '../paper/transform';
-import type { TitleBlockRow } from '../pdf/frame';
+import { useCalibration, DEFAULT_NOMINAL_MM } from './useCalibration';
 
 function download(bytes: Uint8Array, filename: string) {
   const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
@@ -21,38 +21,33 @@ function download(bytes: Uint8Array, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-const INITIAL_ROWS: TitleBlockRow[] = [
-  { label: '会社名', value: '' },
-  { label: '作成日', value: '' },
-  { label: '作成者', value: '' },
-];
-
 export function App() {
-  const [rows, setRows] = useState<TitleBlockRow[]>(INITIAL_ROWS);
   const [paperName, setPaperName] = useState<PaperSizeName>(DEFAULT_PAPER.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const cal = useCalibration();
+
   const paper = PAPER_SIZES[paperName];
   const extent = frameExtentMeters(paper, DEFAULT_SCALE_DENOMINATOR);
-
-  function update(i: number, patch: Partial<TitleBlockRow>) {
-    setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  }
+  const blocked = cal.state.enabled && cal.error !== null;
 
   async function run(kind: 'plan' | 'calibration') {
     setBusy(true);
     setError(null);
     try {
       const fontBytes = await loadFontBytesFromNetwork();
+      const suffix = cal.calibration ? '_補正あり' : '';
       if (kind === 'plan') {
-        const filled = rows.filter((r) => r.label.trim() !== '' || r.value.trim() !== '');
         download(
-          await buildStage0Pdf(fontBytes, { paper, titleBlockRows: filled }),
-          `計画平面図_第0段階_${paper.name}.pdf`,
+          await buildStage0Pdf(fontBytes, { paper, calibration: cal.calibration }),
+          `計画平面図_第0段階_${paper.name}${suffix}.pdf`,
         );
       } else {
-        download(await buildCalibrationPdf(fontBytes, paper), `縮尺検証シート_${paper.name}.pdf`);
+        download(
+          await buildCalibrationPdf(fontBytes, paper, cal.calibration),
+          `縮尺検証シート_${paper.name}${suffix}.pdf`,
+        );
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -66,7 +61,7 @@ export function App() {
       <h1 style={{ fontSize: '1.4rem' }}>計画平面図 作成（第0段階）</h1>
       <p>
         縮尺1/250とフォント埋め込みの実証だけを行う段階です。20.000m×20.000mの正方形を1つ描いた
-        A3横のPDFを出します。敷地データの取り込みは第1段階で入ります。
+        PDFを出します。敷地データの取り込みは第1段階で入ります。
       </p>
 
       <h2 style={{ fontSize: '1.1rem', marginTop: '2rem' }}>用紙</h2>
@@ -91,48 +86,72 @@ export function App() {
         <strong>大きい用紙の図面をA4に縮小印刷すると縮尺が狂います。</strong>
       </p>
 
-      <h2 style={{ fontSize: '1.1rem', marginTop: '2rem' }}>表題欄</h2>
+      <h2 style={{ fontSize: '1.1rem', marginTop: '2rem' }}>印刷補正</h2>
       <p style={{ fontSize: '0.9rem', color: '#555' }}>
-        図面右下の枠に入る内容です。空のままにすると枠だけを引きます。
+        プリンタ設定を「実際のサイズ（100%）」にしても、機種によっては出力が数％伸縮します。
+        まず補正なしで縮尺検証シートを印刷し、200mmの線を定規で測ってください。
+        200.0mmでなければ、その実測値をここに入れると補正できます。
       </p>
-      <table style={{ borderCollapse: 'collapse' }}>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>
-              <td style={{ padding: '0.2rem 0.4rem 0.2rem 0' }}>
-                <input
-                  aria-label={`項目名${i + 1}`}
-                  value={row.label}
-                  placeholder="項目名"
-                  onChange={(e) => update(i, { label: e.target.value })}
-                  style={{ width: '9rem', padding: '0.3rem' }}
-                />
-              </td>
-              <td style={{ padding: '0.2rem 0' }}>
-                <input
-                  aria-label={`値${i + 1}`}
-                  value={row.value}
-                  placeholder="内容"
-                  onChange={(e) => update(i, { value: e.target.value })}
-                  style={{ width: '18rem', padding: '0.3rem' }}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
       <p>
-        <button type="button" onClick={() => setRows((r) => [...r, { label: '', value: '' }])}>
-          行を追加
-        </button>
+        <label>
+          <input
+            type="checkbox"
+            checked={cal.state.enabled}
+            onChange={(e) => cal.setState({ enabled: e.target.checked })}
+          />{' '}
+          印刷補正を有効にする
+        </label>
       </p>
+      {cal.state.enabled && (
+        <div style={{ paddingLeft: '1.5rem' }}>
+          <p>
+            <label>
+              基準長{' '}
+              <input
+                type="number"
+                value={cal.state.nominalMm}
+                min={10}
+                step={10}
+                onChange={(e) => cal.setState({ nominalMm: Number(e.target.value) })}
+                style={{ width: '5rem', padding: '0.3rem' }}
+              />{' '}
+              mm（検証シートの線。既定は{DEFAULT_NOMINAL_MM}mm）
+            </label>
+          </p>
+          <p>
+            <label>
+              定規で測った実測値{' '}
+              <input
+                type="number"
+                value={cal.state.measuredMmText}
+                step={0.1}
+                placeholder="198.5"
+                onChange={(e) => cal.setState({ measuredMmText: e.target.value })}
+                style={{ width: '6rem', padding: '0.3rem' }}
+              />{' '}
+              mm
+            </label>
+          </p>
+          {cal.factor !== null && (
+            <p style={{ color: '#060' }}>
+              補正倍率 <strong>{cal.factor.toFixed(5)}</strong> を適用します。
+            </p>
+          )}
+          {cal.error && <p style={{ color: '#b00' }}>{cal.error}</p>}
+          <p style={{ fontSize: '0.85rem', color: '#555' }}>
+            補正を有効にしたPDFは、<strong>データとしては1/250ではなくなります。</strong>
+            そのプリンタで紙に出したときに1/250になります。PDFをそのまま電子提出する場合は
+            補正を無効にしてください。
+          </p>
+        </div>
+      )}
 
       <h2 style={{ fontSize: '1.1rem', marginTop: '2rem' }}>出力</h2>
       <p style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-        <button type="button" disabled={busy} onClick={() => run('plan')} style={{ padding: '0.6rem 1rem' }}>
+        <button type="button" disabled={busy || blocked} onClick={() => run('plan')} style={{ padding: '0.6rem 1rem' }}>
           計画平面図PDFを出力
         </button>
-        <button type="button" disabled={busy} onClick={() => run('calibration')} style={{ padding: '0.6rem 1rem' }}>
+        <button type="button" disabled={busy || blocked} onClick={() => run('calibration')} style={{ padding: '0.6rem 1rem' }}>
           縮尺検証シートを出力
         </button>
       </p>
