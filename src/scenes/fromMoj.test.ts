@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadMojGeoJson, parcelAt, roughCentroid } from '../data/moj';
 import fixture from '../data/__fixtures__/moj_kounosu_sample.json';
-import { buildSceneFromMoj, nearestParcel } from './fromMoj';
+import { buildSceneFromMoj, nearestParcel, paperRotationFor } from './fromMoj';
+import { pointInPolygon } from '../draw/layout';
 import { toPlaneXY } from '../geo/crs';
 import { PAPER_SIZES } from '../paper/layout';
 import { buildPlanPdf, originCenteredOn, checkFit } from '../pdf/plan';
@@ -139,5 +140,92 @@ describe('実データからPDFを出す', () => {
     const fit = checkFit(r.scene, PAPER_SIZES.A4, 250);
     expect(fit.frameWidthM).toBeCloseTo(65.5, 6);
     expect(fit.contentWidthM).toBeGreaterThan(0);
+  });
+});
+
+describe('実データの筆への駐車区画の割り付け', () => {
+  /** 抜粋の中でいちばん広い、駐車場にできる形の筆。 */
+  const wide = parcels.find((p) => p.chiban === '327')!;
+  const outline = () => wide.outline.map((q) => toPlaneXY(q, ZONE));
+  const center = () => toPlaneXY(roughCentroid(wide.outline), ZONE);
+
+  function build(parking?: false | { oneWay?: boolean }) {
+    return buildSceneFromMoj({
+      parcels, subjects: [{ id: wide.id, chimoku: '田' }], zone: ZONE, center: center(),
+      paper: PAPER_SIZES.A4, scaleDenominator: 250,
+      ...(parking === undefined ? {} : { parking }),
+    });
+  }
+
+  it('申請地に区画が入り、台数が返る', () => {
+    const r = build();
+    expect(r.stallCount).toBeGreaterThan(0);
+    expect(r.scene.bands.length).toBeGreaterThan(0);
+    expect(r.scene.bands.reduce((s, b) => s + b.stalls.length, 0)).toBe(r.stallCount);
+  });
+
+  it('マスはすべて申請地の筆の内側に入る', () => {
+    const r = build();
+    const poly = outline();
+    for (const b of r.scene.bands) {
+      for (const s of b.stalls) {
+        expect(pointInPolygon(poly, s.center)).toBe(true);
+      }
+    }
+  });
+
+  it('マスの総面積が敷地面積を超えない', () => {
+    const r = build();
+    const stallArea = r.stallCount * 2.5 * 5.0;
+    expect(stallArea).toBeLessThan(area(outline()));
+  });
+
+  it('「通路」の注記が車路のぶんだけ入る', () => {
+    const r = build();
+    const tsuuro = r.scene.notes.filter((n) => n.text === '通路');
+    expect(tsuuro.length).toBeGreaterThan(0);
+    // 文字が逆さにならない範囲に畳まれている
+    for (const n of tsuuro) {
+      expect(n.rotationDeg!).toBeGreaterThan(-90);
+      expect(n.rotationDeg!).toBeLessThanOrEqual(90);
+    }
+  });
+
+  it('parking:false で区画を描かない', () => {
+    const r = build(false);
+    expect(r.stallCount).toBe(0);
+    expect(r.scene.bands).toHaveLength(0);
+    expect(r.scene.notes.filter((n) => n.text === '通路')).toHaveLength(0);
+    // 筆界とフェンスは残る
+    expect(r.scene.parcels.length).toBeGreaterThan(0);
+    expect(r.scene.edgings.length).toBeGreaterThan(0);
+  });
+
+  it('一方通行にすると車路が細くなるぶん台数が減らない', () => {
+    expect(build({ oneWay: true }).stallCount).toBeGreaterThanOrEqual(build().stallCount);
+  });
+
+  it('区画を入れても図郭に収まる', () => {
+    const r = build();
+    const fit = checkFit(r.scene, PAPER_SIZES.A4, 250);
+    expect(fit.fits).toBe(true);
+  });
+});
+
+describe('paperRotationFor', () => {
+  it('真東の車路は紙の上で水平', () => {
+    expect(paperRotationFor(90)).toBeCloseTo(0, 9);
+  });
+
+  it('真北の車路は紙の上で垂直', () => {
+    expect(paperRotationFor(0)).toBeCloseTo(90, 9);
+  });
+
+  it('文字が逆さになる向きは畳む', () => {
+    for (let b = 0; b < 360; b += 7) {
+      const r = paperRotationFor(b);
+      expect(r).toBeGreaterThan(-90);
+      expect(r).toBeLessThanOrEqual(90);
+    }
   });
 });

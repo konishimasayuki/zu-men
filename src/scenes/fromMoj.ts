@@ -11,6 +11,7 @@
 import type { PlaneXY } from '../paper/transform';
 import type { Scene, Parcel } from '../draw/scene';
 import { emptyScene } from '../draw/scene';
+import { labelSpot, layoutParking, ParkingLayoutOptions } from '../draw/layout';
 import { toPlaneXY } from '../geo/crs';
 import type { ZoneNumber } from '../geo/crs';
 import { area } from '../geo/area';
@@ -43,6 +44,11 @@ export interface BuildFromMojOptions {
   scaleDenominator: number;
   /** 図郭からさらに外側へ何メートル拾うか。少し余分に拾って端で切る。 */
   marginM?: number;
+  /**
+   * 駐車区画を割り付けるか。既定は割り付ける。
+   * この図面は「駐車場に転用する計画」を示すものなので、区画が無いと図面にならない。
+   */
+  parking?: false | ParkingLayoutOptions;
 }
 
 export interface BuildFromMojResult {
@@ -55,6 +61,11 @@ export interface BuildFromMojResult {
   computedAreas: { chiban: string; areaM2: number }[];
   /** 申請地の合計面積[㎡]。 */
   totalAreaM2: number;
+  /**
+   * 割り付けた駐車台数。
+   * **図面には書かない**（参考図面に記載が無いため）。画面で確認するための値。
+   */
+  stallCount: number;
 }
 
 /**
@@ -123,10 +134,27 @@ export function buildSceneFromMoj(opts: BuildFromMojOptions): BuildFromMojResult
     }
   }
 
-  // 申請地の外周にフェンスを回す
+  // 申請地の外周にフェンスを回し、内側に駐車区画を割り付ける
+  let stallCount = 0;
   for (const p of subjectParcels) {
     const outline = p.outline.map((q) => toPlaneXY(q, zone));
     scene.edgings.push({ kind: 'fence', path: outline.concat([outline[0]]) });
+
+    const layout = opts.parking === false ? null : layoutParking(outline, opts.parking ?? {});
+    if (layout) {
+      scene.bands.push(...layout.bands);
+      stallCount += layout.count;
+      // 参考図面は区画のあいだに「通路」と書いている。台数は書かない。
+      for (const at of layout.aisleCenters) {
+        scene.notes.push({ text: '通路', at, rotationDeg: paperRotationFor(layout.bearingDeg) });
+      }
+    }
+
+    // 地番・地目・面積・所有者は4行になる。区画に重なると読めないので空き地を探す。
+    const label = scene.parcels.find((q) => q.isSubject && q.chiban === p.chiban);
+    if (label) {
+      label.labelAt = labelSpot(outline, layout ? layout.bands.map((b) => b.outline) : []);
+    }
   }
 
   return {
@@ -135,7 +163,19 @@ export function buildSceneFromMoj(opts: BuildFromMojOptions): BuildFromMojResult
     neighbours: neighbourParcels,
     computedAreas,
     totalAreaM2: computedAreas.reduce((s, a) => s + a.areaM2, 0),
+    stallCount,
   };
+}
+
+/**
+ * 方位角[度]（真北から時計回り）を、紙面での文字の回転角[度]（反時計回り）に直す。
+ * 紙は北が上なので、真東(90度)が水平(0度)になる。文字が逆さにならないよう畳む。
+ */
+export function paperRotationFor(bearingDeg: number): number {
+  let deg = 90 - bearingDeg;
+  while (deg > 90) deg -= 180;
+  while (deg <= -90) deg += 180;
+  return deg;
 }
 
 /** ピンにいちばん近い筆を、図郭内から選ぶ。申請地の初期選択に使う。 */

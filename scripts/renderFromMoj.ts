@@ -48,5 +48,6 @@ for (const paperName of ['A4', 'A3'] as const) {
     `面積(座標法) ${a.areaM2.toFixed(1)}㎡ = ${m2ToTsubo(a.areaM2).toFixed(1)}坪`,
   );
   console.log(`     図面 ${fit.contentWidthM.toFixed(1)}×${fit.contentHeightM.toFixed(1)}m / 図郭 ${fit.frameWidthM.toFixed(1)}×${fit.frameHeightM.toFixed(1)}m`);
+  console.log(`     駐車区画 ${r.stallCount}台（帯${r.scene.bands.length}列・通路注記${r.scene.notes.length}）`);
   console.log(`     ${file} (${pdf.length.toLocaleString()}バイト)`);
 }

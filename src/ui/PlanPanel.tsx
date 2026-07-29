@@ -14,7 +14,8 @@ import type { PaperSizeName } from '../paper/layout';
 import { DEFAULT_SCALE_DENOMINATOR } from '../paper/transform';
 import { toPlaneXY } from '../geo/crs';
 import { makeSampleScene } from '../scenes/sample';
-import { countStalls } from '../draw/parking';
+import { countStalls, DEFAULT_STALL } from '../draw/parking';
+import { PARKING_STANDARDS } from '../draw/standards';
 import { tsuboToM2, formatTsuboWithM2 } from '../draw/tsubo';
 import type { PrinterCalibration } from '../paper/calibration';
 import type { SiteSelection } from './SitePicker';
@@ -38,6 +39,7 @@ export function PlanPanel({ site, calibration, mojParcels }: PlanPanelProps) {
   const [chiban, setChiban] = useState('');
   const [chimoku, setChimoku] = useState('田');
   const [owner, setOwner] = useState('');
+  const [oneWay, setOneWay] = useState(false);
   const [paperName, setPaperName] = useState<PaperSizeName>(DEFAULT_PAPER.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +78,7 @@ export function PlanPanel({ site, calibration, mojParcels }: PlanPanelProps) {
         center,
         paper,
         scaleDenominator: DEFAULT_SCALE_DENOMINATOR,
+        parking: { oneWay },
       })
     : null;
 
@@ -93,6 +96,7 @@ export function PlanPanel({ site, calibration, mojParcels }: PlanPanelProps) {
         bandCount: 2,
       });
   const fit = checkFit(scene, paper, DEFAULT_SCALE_DENOMINATOR);
+  const aisleM = oneWay ? PARKING_STANDARDS.aisle.oneWayMinM : PARKING_STANDARDS.aisle.twoWayMinM;
 
   async function output() {
     setBusy(true);
@@ -132,8 +136,30 @@ export function PlanPanel({ site, calibration, mojParcels }: PlanPanelProps) {
           </p>
           <p style={{ margin: '0.3rem 0 0', fontSize: '0.9rem' }}>
             座標法による面積 <strong>{built.computedAreas[0]?.areaM2.toFixed(1)}㎡</strong>
-            （{m2ToTsubo(built.computedAreas[0]?.areaM2 ?? 0).toFixed(1)}坪）　
+            （{m2ToTsubo(built.computedAreas[0]?.areaM2 ?? 0).toFixed(1)}坪）
             周辺 {built.neighbours.length}筆を描画
+          </p>
+          <p style={{ margin: '0.3rem 0 0', fontSize: '0.9rem' }}>
+            {built.stallCount > 0 ? (
+              <>
+                駐車区画 <strong>{built.stallCount}台</strong>を割り付けました
+                （マス{DEFAULT_STALL.widthM}×{DEFAULT_STALL.depthM}m、車路{aisleM}m）。
+                <span style={{ color: '#555' }}>台数は図面には記載しません。</span>
+              </>
+            ) : (
+              <span style={{ color: '#a00' }}>
+                この筆には車路（{aisleM}m）を取った区画が入りませんでした。
+                筆が狭いか細長い可能性があります。図面には筆界とフェンスのみ描きます。
+                {!oneWay && '　一方通行にすると車路が3.5mになり、入る場合があります。'}
+              </span>
+            )}
+          </p>
+          <p style={{ margin: '0.3rem 0 0', fontSize: '0.9rem' }}>
+            <label>
+              <input type="checkbox" checked={oneWay} onChange={(e) => setOneWay(e.target.checked)} />{' '}
+              車路を一方通行にする（{PARKING_STANDARDS.aisle.oneWayMinM}m。既定は対面
+              {PARKING_STANDARDS.aisle.twoWayMinM}m。駐車場法施行令第7条）
+            </label>
           </p>
           <p style={{ margin: '0.3rem 0 0', fontSize: '0.85rem', color: isUsableForArea(hit) ? '#060' : '#a00' }}>
             {precisionNote(hit)}
