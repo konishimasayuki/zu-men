@@ -27,7 +27,15 @@ export interface FrameOptions {
   title?: string;
 }
 
-function rect(page: PDFPage, xMm: number, yMm: number, wMm: number, hMm: number, widthMm: number) {
+function rect(
+  page: PDFPage,
+  xMm: number,
+  yMm: number,
+  wMm: number,
+  hMm: number,
+  widthMm: number,
+  fillWhite = false,
+) {
   page.drawRectangle({
     x: mmToPt(xMm),
     y: mmToPt(yMm),
@@ -35,6 +43,7 @@ function rect(page: PDFPage, xMm: number, yMm: number, wMm: number, hMm: number,
     height: mmToPt(hMm),
     borderColor: BLACK,
     borderWidth: mmToPt(widthMm),
+    ...(fillWhite ? { color: rgb(1, 1, 1) } : {}),
   });
 }
 
@@ -66,7 +75,8 @@ export function drawTitle(page: PDFPage, size: PaperSize, font: PDFFont, title: 
   const boxX = f.xMm + f.widthMm / 2 - boxW / 2 + TITLE_BOX_MM.centerRightShiftMm;
   const boxY = f.yMm + f.heightMm - TITLE_BOX_MM.topOffsetMm - boxH;
 
-  rect(page, boxX, boxY, boxW, boxH, LINE_WIDTH_MM.box);
+  // 背後の筆界線が透けないよう白で塗る
+  rect(page, boxX, boxY, boxW, boxH, LINE_WIDTH_MM.box, true);
 
   const fontSizeMm = 4.2;
   const fontSize = mmToPt(fontSizeMm);

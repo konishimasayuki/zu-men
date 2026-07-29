@@ -72,6 +72,8 @@ export interface PageGeometry {
   nonIdentityCtmCount: number;
   /** 検出した拡大縮小の倍率。等倍なら空配列。 */
   ctmScales: number[];
+  /** クリップ演算子(W)の回数。図郭でのクリップが効いているかの確認に使う。 */
+  clipCount: number;
 }
 
 /** PDFの座標変換行列 [a b c d e f]。 */
@@ -139,6 +141,7 @@ export async function readPageGeometry(pdfBytes: Uint8Array): Promise<PageGeomet
 
   const segments: Segment[] = [];
   let nonIdentityCtmCount = 0;
+  let clipCount = 0;
   const ctmScales: number[] = [];
 
   // 現在の座標変換行列と、q / Q のためのスタック。
@@ -197,6 +200,11 @@ export async function readPageGeometry(pdfBytes: Uint8Array): Promise<PageGeomet
         seg(x, y + h, x, y);
         break;
       }
+      case 'W':
+      case 'W*': {
+        clipCount++;
+        break;
+      }
       case 'q': {
         ctmStack.push([...ctm] as Matrix);
         break;
@@ -230,6 +238,7 @@ export async function readPageGeometry(pdfBytes: Uint8Array): Promise<PageGeomet
     segments,
     nonIdentityCtmCount,
     ctmScales,
+    clipCount,
   };
 }
 

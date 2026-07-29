@@ -31,6 +31,8 @@ npx vite-node scripts/emit.ts
 npx vite-node scripts/calcheck.ts   # 印刷補正の効きを実測
 npx vite-node scripts/crscheck.ts   # proj4js と PROJ の一致度を実測
 npx vite-node scripts/gsicheck.ts   # 地理院の住所検索APIを実データで確認
+npx vite-node scripts/renderPlan.ts # 参考図面の再現を out/ に出力
+npx vite-node scripts/compare.ts    # 参考図面との記載要素の突合表（検収基準6）
 python3 scripts/genCrsFixtures.py   # 座標変換の検証用固定値を PROJ から再生成（要 pyproj）
 ```
 
