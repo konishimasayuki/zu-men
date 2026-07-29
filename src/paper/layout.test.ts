@@ -1,17 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { PAPER_SIZES, frameOf, frameExtentMeters, smallestPaperFor } from './layout';
+import { PAPER_SIZES, DEFAULT_PAPER, frameOf, frameExtentMeters, smallestPaperFor } from './layout';
 
 describe('用紙と図郭', () => {
+  it('既定はA4横。依頼者のプリンタがA4のため', () => {
+    expect(DEFAULT_PAPER.name).toBe('A4');
+    expect(DEFAULT_PAPER.widthMm).toBe(297);
+    expect(DEFAULT_PAPER.heightMm).toBe(210);
+  });
+
   it('A3横は 420×297mm', () => {
     expect(PAPER_SIZES.A3.widthMm).toBe(420);
     expect(PAPER_SIZES.A3.heightMm).toBe(297);
   });
 
   it('図郭は左に綴じ代20mmを取る', () => {
-    const f = frameOf(PAPER_SIZES.A3);
+    const f = frameOf(PAPER_SIZES.A4);
     expect(f.xMm).toBe(20);
-    expect(f.widthMm).toBe(385);
-    expect(f.heightMm).toBe(267);
+    expect(f.widthMm).toBe(262);
+    expect(f.heightMm).toBe(180);
+  });
+
+  it('A4の図郭は実寸 65.5m × 45.0m に相当する', () => {
+    const e = frameExtentMeters(PAPER_SIZES.A4, 250);
+    expect(e.widthM).toBeCloseTo(65.5, 9);
+    expect(e.heightM).toBeCloseTo(45.0, 9);
   });
 
   it('A3の図郭は実寸 96.25m × 66.75m に相当する', () => {
@@ -20,8 +32,17 @@ describe('用紙と図郭', () => {
     expect(e.heightM).toBeCloseTo(66.75, 9);
   });
 
-  it('小さい敷地はA3が選ばれる', () => {
-    expect(smallestPaperFor(40, 40, 250)?.name).toBe('A3');
+  it('約496㎡（22.3m四方）の敷地はA4に収まる', () => {
+    expect(smallestPaperFor(22.3, 22.3, 250)?.name).toBe('A4');
+  });
+
+  it('小さい敷地はA4が選ばれる', () => {
+    expect(smallestPaperFor(40, 40, 250)?.name).toBe('A4');
+  });
+
+  it('A4に収まらない敷地はA3が提案される', () => {
+    // A4の図郭は 65.5m × 45.0m。縦が足りない。
+    expect(smallestPaperFor(60, 50, 250)?.name).toBe('A3');
   });
 
   it('A3に収まらない敷地はA2が提案される', () => {

@@ -8,7 +8,7 @@
 
 import { paperMmToMeters } from './transform';
 
-export type PaperSizeName = 'A3' | 'A2' | 'A1';
+export type PaperSizeName = 'A4' | 'A3' | 'A2' | 'A1';
 
 export interface PaperSize {
   name: PaperSizeName;
@@ -19,10 +19,22 @@ export interface PaperSize {
 }
 
 export const PAPER_SIZES: Record<PaperSizeName, PaperSize> = {
+  A4: { name: 'A4', widthMm: 297, heightMm: 210 },
   A3: { name: 'A3', widthMm: 420, heightMm: 297 },
   A2: { name: 'A2', widthMm: 594, heightMm: 420 },
   A1: { name: 'A1', widthMm: 841, heightMm: 594 },
 };
+
+/** 大きい順に並べた用紙名。収まる最小の用紙を探すときに使う。 */
+export const PAPER_ORDER: readonly PaperSizeName[] = ['A4', 'A3', 'A2', 'A1'];
+
+/**
+ * 既定の用紙。依頼者のプリンタがA4のため A4横。
+ *
+ * **A3で作図してA4に縮小印刷してはならない。** 縮尺が壊れる。
+ * A4に収まらない場合はより大きい用紙を提案し、その用紙で等倍印刷してもらう。
+ */
+export const DEFAULT_PAPER: PaperSize = PAPER_SIZES.A4;
 
 /** 余白。左だけ綴じ代のぶん広い。 */
 export const MARGIN_MM = {
@@ -71,7 +83,7 @@ export function smallestPaperFor(
   heightM: number,
   scaleDenominator: number,
 ): PaperSize | null {
-  for (const name of ['A3', 'A2', 'A1'] as const) {
+  for (const name of PAPER_ORDER) {
     const size = PAPER_SIZES[name];
     const extent = frameExtentMeters(size, scaleDenominator);
     if (widthM <= extent.widthM && heightM <= extent.heightM) return size;

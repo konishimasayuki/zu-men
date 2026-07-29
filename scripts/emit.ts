@@ -10,6 +10,7 @@ import { buildStage0Pdf, buildCalibrationPdf, VERIFICATION_SQUARE_SIDE_M } from 
 import { readPageGeometry, readEmbeddedFonts } from '../src/test/pdfInspect';
 import { metersToPt, metersToPaperMm } from '../src/paper/transform';
 import { area } from '../src/geo/area';
+import { DEFAULT_PAPER, frameExtentMeters } from '../src/paper/layout';
 import { verificationSquare } from '../src/pdf/stage0';
 
 const OUT = resolve(import.meta.dirname, '../out');
@@ -26,8 +27,8 @@ const plan = await buildStage0Pdf(fontBytes, {
 });
 const calib = await buildCalibrationPdf(fontBytes);
 
-writeFileSync(resolve(OUT, '計画平面図_第0段階.pdf'), plan);
-writeFileSync(resolve(OUT, '縮尺検証シート.pdf'), calib);
+writeFileSync(resolve(OUT, '計画平面図_第0段階_A4.pdf'), plan);
+writeFileSync(resolve(OUT, '縮尺検証シート_A4.pdf'), calib);
 
 const geom = await readPageGeometry(plan);
 const fonts = await readEmbeddedFonts(plan);
@@ -35,7 +36,9 @@ const expectedPt = metersToPt(VERIFICATION_SQUARE_SIDE_M);
 const matches = geom.segments.filter((s) => Math.abs(s.lengthPt - expectedPt) <= 0.01);
 
 const rows: Array<[string, string]> = [
+  ['用紙', `${DEFAULT_PAPER.name}横`],
   ['用紙寸法', `${geom.widthMm.toFixed(4)} × ${geom.heightMm.toFixed(4)} mm （${geom.widthPt.toFixed(4)} × ${geom.heightPt.toFixed(4)} pt）`],
+  ['図郭の実寸換算', `${frameExtentMeters(DEFAULT_PAPER, 250).widthM.toFixed(2)} m × ${frameExtentMeters(DEFAULT_PAPER, 250).heightM.toFixed(2)} m`],
   ['20mの辺の理論値', `${metersToPaperMm(20).toFixed(4)} mm / ${expectedPt.toFixed(4)} pt`],
   ['20mの辺の実測値', matches.length > 0 ? `${matches[0].lengthMm.toFixed(4)} mm / ${matches[0].lengthPt.toFixed(4)} pt` : '該当なし'],
   ['一致した辺の本数', `${matches.length} 本（正方形なので4本が期待値）`],

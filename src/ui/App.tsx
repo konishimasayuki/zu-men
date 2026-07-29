@@ -6,6 +6,9 @@
 import { useState } from 'react';
 import { loadFontBytesFromNetwork } from '../pdf/font';
 import { buildStage0Pdf, buildCalibrationPdf } from '../pdf/stage0';
+import { PAPER_SIZES, PAPER_ORDER, DEFAULT_PAPER, frameExtentMeters } from '../paper/layout';
+import type { PaperSizeName } from '../paper/layout';
+import { DEFAULT_SCALE_DENOMINATOR } from '../paper/transform';
 import type { TitleBlockRow } from '../pdf/frame';
 
 function download(bytes: Uint8Array, filename: string) {
@@ -26,8 +29,12 @@ const INITIAL_ROWS: TitleBlockRow[] = [
 
 export function App() {
   const [rows, setRows] = useState<TitleBlockRow[]>(INITIAL_ROWS);
+  const [paperName, setPaperName] = useState<PaperSizeName>(DEFAULT_PAPER.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const paper = PAPER_SIZES[paperName];
+  const extent = frameExtentMeters(paper, DEFAULT_SCALE_DENOMINATOR);
 
   function update(i: number, patch: Partial<TitleBlockRow>) {
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -40,9 +47,12 @@ export function App() {
       const fontBytes = await loadFontBytesFromNetwork();
       if (kind === 'plan') {
         const filled = rows.filter((r) => r.label.trim() !== '' || r.value.trim() !== '');
-        download(await buildStage0Pdf(fontBytes, { titleBlockRows: filled }), '計画平面図_第0段階.pdf');
+        download(
+          await buildStage0Pdf(fontBytes, { paper, titleBlockRows: filled }),
+          `計画平面図_第0段階_${paper.name}.pdf`,
+        );
       } else {
-        download(await buildCalibrationPdf(fontBytes), '縮尺検証シート.pdf');
+        download(await buildCalibrationPdf(fontBytes, paper), `縮尺検証シート_${paper.name}.pdf`);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -57,6 +67,28 @@ export function App() {
       <p>
         縮尺1/250とフォント埋め込みの実証だけを行う段階です。20.000m×20.000mの正方形を1つ描いた
         A3横のPDFを出します。敷地データの取り込みは第1段階で入ります。
+      </p>
+
+      <h2 style={{ fontSize: '1.1rem', marginTop: '2rem' }}>用紙</h2>
+      <p>
+        <select
+          aria-label="用紙サイズ"
+          value={paperName}
+          onChange={(e) => setPaperName(e.target.value as PaperSizeName)}
+          style={{ padding: '0.4rem' }}
+        >
+          {PAPER_ORDER.map((n) => (
+            <option key={n} value={n}>
+              {n}横（{PAPER_SIZES[n].widthMm}×{PAPER_SIZES[n].heightMm}mm）
+            </option>
+          ))}
+        </select>
+      </p>
+      <p style={{ fontSize: '0.9rem', color: '#555' }}>
+        この用紙の図郭に入る実寸は <strong>{extent.widthM.toFixed(2)}m × {extent.heightM.toFixed(2)}m</strong>
+        （縮尺1/{DEFAULT_SCALE_DENOMINATOR}）。敷地と周辺がこれに収まらない場合は、
+        大きい用紙を選んでその用紙で等倍印刷してください。
+        <strong>大きい用紙の図面をA4に縮小印刷すると縮尺が狂います。</strong>
       </p>
 
       <h2 style={{ fontSize: '1.1rem', marginTop: '2rem' }}>表題欄</h2>
@@ -111,7 +143,7 @@ export function App() {
         <strong>印刷するときの注意</strong>
         <p style={{ margin: '0.5rem 0 0' }}>
           プリンタ設定は必ず「実際のサイズ（100%）」にしてください。「用紙に合わせる」を選ぶと
-          数％縮んで縮尺が狂います。縮尺検証シートを印刷して、100mm・200mm・80mmの線を
+          数％縮んで縮尺が狂います。縮尺検証シートを{paper.name}に印刷して、100mm・200mm・80mmの線を
           定規で測って確かめられます。
         </p>
       </div>

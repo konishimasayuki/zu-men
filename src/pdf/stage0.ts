@@ -10,7 +10,7 @@
 
 import { rgb } from 'pdf-lib';
 import { mmToPt } from '../paper/units';
-import { PAPER_SIZES, frameOf } from '../paper/layout';
+import { DEFAULT_PAPER, PaperSize, frameOf } from '../paper/layout';
 import { DEFAULT_SCALE_DENOMINATOR, createProjector, metersToPaperMm } from '../paper/transform';
 import type { PlaneXY } from '../paper/transform';
 import { createSheet } from './document';
@@ -37,16 +37,18 @@ export function verificationSquare(originX = 0, originY = 0): PlaneXY[] {
 
 export interface Stage0Options {
   scaleDenominator?: number;
+  /** 用紙。既定は依頼者のプリンタに合わせてA4横。 */
+  paper?: PaperSize;
   titleBlockRows?: readonly TitleBlockRow[];
 }
 
-/** 20m正方形1つだけのA3横PDF。 */
+/** 20m正方形1つだけの図面PDF。 */
 export async function buildStage0Pdf(
   fontBytes: Uint8Array | ArrayBuffer,
   opts: Stage0Options = {},
 ): Promise<Uint8Array> {
   const scale = opts.scaleDenominator ?? DEFAULT_SCALE_DENOMINATOR;
-  const size = PAPER_SIZES.A3;
+  const size = opts.paper ?? DEFAULT_PAPER;
   const { doc, page, font } = await createSheet(size, fontBytes);
 
   drawSheet(page, {
@@ -89,15 +91,30 @@ export async function buildStage0Pdf(
 }
 
 /**
+ * 検証シートの注意書き。用紙名を埋め込むので、用紙を変えたら文言も変わる。
+ * ここを固定文字列にすると「A4なのにA3で印刷しろ」と書かれた紙が出る。
+ */
+export function buildCalibrationNote(size: PaperSize): string[] {
+  return [
+    `プリンタ設定を「実際のサイズ（100%）」にして${size.name}で印刷し、上の線を定規で測ってください。`,
+    '「用紙に合わせる」「フィット」を選ぶと数％縮んで縮尺が狂います。',
+    '3本すべてが表示どおりの長さであれば、縮尺は正しく出力されています。',
+  ];
+}
+
+/**
  * 検証用PDF。100mmと200mmの基準線を入れる。
  * 印刷後に定規を当てるためのものなので、余計な装飾を入れない。
  */
-export async function buildCalibrationPdf(fontBytes: Uint8Array | ArrayBuffer): Promise<Uint8Array> {
-  const size = PAPER_SIZES.A3;
+export async function buildCalibrationPdf(
+  fontBytes: Uint8Array | ArrayBuffer,
+  paper: PaperSize = DEFAULT_PAPER,
+): Promise<Uint8Array> {
+  const size = paper;
   const { doc, page, font } = await createSheet(size, fontBytes);
   const f = frameOf(size);
 
-  drawSheet(page, { size, font, title: '縮尺検証シート　S＝1/250' });
+  drawSheet(page, { size, font, title: `縮尺検証シート　${size.name}　S＝1/250` });
 
   const bars: Array<{ lengthMm: number; label: string }> = [
     { lengthMm: 100, label: '100mm（実長 25.000m）' },
@@ -134,11 +151,7 @@ export async function buildCalibrationPdf(fontBytes: Uint8Array | ArrayBuffer): 
     y -= 30;
   }
 
-  const note = [
-    'プリンタ設定を「実際のサイズ（100%）」にしてA3で印刷し、上の線を定規で測ってください。',
-    '「用紙に合わせる」「フィット」を選ぶと数％縮んで縮尺が狂います。',
-    '3本すべてが表示どおりの長さであれば、縮尺は正しく出力されています。',
-  ];
+  const note = buildCalibrationNote(size);
   let ny = y - 6;
   for (const n of note) {
     page.drawText(n, { x: mmToPt(f.xMm + 20), y: mmToPt(ny), size: mmToPt(3.2), font, color: BLACK });

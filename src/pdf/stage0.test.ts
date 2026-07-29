@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { buildStage0Pdf, buildCalibrationPdf } from './stage0';
+import { PAPER_SIZES } from '../paper/layout';
 import {
   readPageGeometry,
   countSegmentsOfLength,
@@ -19,13 +20,27 @@ beforeAll(() => {
 });
 
 describe('第0段階のPDF', () => {
-  it('A3横の用紙寸法が 420×297mm ちょうどになる', async () => {
+  it('既定はA4横。用紙寸法が 297×210mm ちょうどになる', async () => {
     const pdf = await buildStage0Pdf(fontBytes);
+    const geom = await readPageGeometry(pdf);
+    expect(geom.widthMm).toBeCloseTo(297, 6);
+    expect(geom.heightMm).toBeCloseTo(210, 6);
+    expect(geom.widthPt).toBeCloseTo(mmToPt(297), 6);
+    expect(geom.heightPt).toBeCloseTo(mmToPt(210), 6);
+  });
+
+  it('用紙をA3に切り替えると 420×297mm になる', async () => {
+    const pdf = await buildStage0Pdf(fontBytes, { paper: PAPER_SIZES.A3 });
     const geom = await readPageGeometry(pdf);
     expect(geom.widthMm).toBeCloseTo(420, 6);
     expect(geom.heightMm).toBeCloseTo(297, 6);
-    expect(geom.widthPt).toBeCloseTo(mmToPt(420), 6);
-    expect(geom.heightPt).toBeCloseTo(mmToPt(297), 6);
+  });
+
+  it('用紙を変えても20mの辺の長さは変わらない（縮尺は用紙に依存しない）', async () => {
+    for (const paper of [PAPER_SIZES.A4, PAPER_SIZES.A3, PAPER_SIZES.A2, PAPER_SIZES.A1]) {
+      const geom = await readPageGeometry(await buildStage0Pdf(fontBytes, { paper }));
+      expect(closestSegmentLengthMm(geom, 80)).toBeCloseTo(80, 6);
+    }
   });
 
   it('検収基準1: 20mの辺が 226.772pt（±0.01）で出力されている', async () => {
@@ -56,11 +71,11 @@ describe('第0段階のPDF', () => {
     expect(geom.nonIdentityCtmCount).toBe(0);
   });
 
-  it('図郭が 385×267mm で描かれている（左綴じ代20mm）', async () => {
+  it('A4の図郭が 262×180mm で描かれている（左綴じ代20mm）', async () => {
     const pdf = await buildStage0Pdf(fontBytes);
     const geom = await readPageGeometry(pdf);
-    expect(countSegmentsOfLength(geom, 385, 0.001)).toBeGreaterThanOrEqual(2);
-    expect(countSegmentsOfLength(geom, 267, 0.001)).toBeGreaterThanOrEqual(2);
+    expect(countSegmentsOfLength(geom, 262, 0.001)).toBeGreaterThanOrEqual(2);
+    expect(countSegmentsOfLength(geom, 180, 0.001)).toBeGreaterThanOrEqual(2);
   });
 
   it('縮尺分母を変えると辺の長さが比例して変わる', async () => {
@@ -114,10 +129,35 @@ describe('検証用PDF', () => {
     expect(countSegmentsOfLength(geom, 80, 0.001)).toBeGreaterThanOrEqual(1);
   });
 
-  it('用紙寸法はA3横', async () => {
+  it('既定の用紙寸法はA4横', async () => {
     const pdf = await buildCalibrationPdf(fontBytes);
     const geom = await readPageGeometry(pdf);
-    expect(geom.widthMm).toBeCloseTo(420, 6);
-    expect(geom.heightMm).toBeCloseTo(297, 6);
+    expect(geom.widthMm).toBeCloseTo(297, 6);
+    expect(geom.heightMm).toBeCloseTo(210, 6);
+  });
+
+  it('印刷指示の用紙名が実際の用紙と一致する（A3固定の埋め込みを防ぐ）', async () => {
+    for (const paper of [PAPER_SIZES.A4, PAPER_SIZES.A3]) {
+      const pdf = await buildCalibrationPdf(fontBytes, paper);
+      const doc = await PDFDocument.load(pdf);
+      expect(doc.getPageCount()).toBe(1);
+      const geom = await readPageGeometry(pdf);
+      // 用紙名が正しければ用紙寸法も一致するはず
+      expect(geom.widthMm).toBeCloseTo(paper.widthMm, 6);
+    }
+    // 文言そのものは描画テキストなので、生成に使った用紙名を直接確認する
+    const { buildCalibrationNote } = await import('./stage0');
+    expect(buildCalibrationNote(PAPER_SIZES.A4)[0]).toContain('A4で印刷');
+    expect(buildCalibrationNote(PAPER_SIZES.A3)[0]).toContain('A3で印刷');
+  });
+
+  it('200mmの基準線がA4の図郭(262mm)に収まっている', async () => {
+    const pdf = await buildCalibrationPdf(fontBytes);
+    const geom = await readPageGeometry(pdf);
+    const bar = geom.segments.find((s) => Math.abs(s.lengthMm - 200) < 0.001)!;
+    expect(bar).toBeDefined();
+    // 図郭は x=20mm から x=282mm
+    const rightEndMm = Math.max(bar.x1, bar.x2) / mmToPt(1);
+    expect(rightEndMm).toBeLessThanOrEqual(282);
   });
 });
