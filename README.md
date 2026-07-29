@@ -33,6 +33,8 @@ npx vite-node scripts/crscheck.ts   # proj4js と PROJ の一致度を実測
 npx vite-node scripts/gsicheck.ts   # 地理院の住所検索APIを実データで確認
 npx vite-node scripts/renderPlan.ts # 参考図面の再現を out/ に出力
 npx vite-node scripts/compare.ts    # 参考図面との記載要素の突合表（検収基準6）
+npx vite-node scripts/renderSamples.ts  # 対象地の規模（90坪・143坪）でA4・1/250を出力
+npx vite-node scripts/marginCheck.ts    # 縮尺・用紙ごとに描ける周辺の広さを実測
 python3 scripts/genCrsFixtures.py   # 座標変換の検証用固定値を PROJ から再生成（要 pyproj）
 ```
 
