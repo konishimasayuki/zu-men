@@ -68,6 +68,24 @@ export function centeredOrigin(scene: Scene, paper: PaperSize, scaleDenominator:
   };
 }
 
+/**
+ * 指定した1点が図郭の中央に来る origin を求める。
+ *
+ * 「地図で指した場所の計画平面図」を出すときは、図面の外接矩形ではなく
+ * ピンそのものを中心に据える。ユーザーが指した点が紙の真ん中に来る。
+ */
+export function originCenteredOn(
+  point: PlaneXY,
+  paper: PaperSize,
+  scaleDenominator: number,
+): PlaneXY {
+  const extent = frameExtentMeters(paper, scaleDenominator);
+  return {
+    x: point.x - extent.heightM / 2,
+    y: point.y - extent.widthM / 2,
+  };
+}
+
 export async function buildPlanPdf(
   scene: Scene,
   fontBytes: Uint8Array | ArrayBuffer,

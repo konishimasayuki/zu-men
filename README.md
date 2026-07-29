@@ -1,6 +1,16 @@
 # zu-men
 
-農地法5条の許可申請に添付する計画平面図を、縮尺1/250のベクタPDFで出力するWebアプリ。
+**住所を検索し、地図でピンをずらして指定した場所の計画平面図を、縮尺1/250のベクタPDFで出す。**
+
+農地法5条の許可申請に添付する計画平面図を作るWebアプリ。
+
+## 使う流れ
+
+1. 住所を検索する
+2. 地図をクリックしてピンを対象地に合わせる
+3. 系番号を確認する（間違えると座標が数十kmずれる）
+4. 坪数・向き・地番を決める
+5. 「この場所の計画平面図PDFを出力」
 
 開発方針は [CLAUDE.md](./CLAUDE.md)、進捗は [PLAN.md](./PLAN.md)、
 確定した事実は [NOTES.md](./NOTES.md) を参照。
@@ -42,7 +52,8 @@ python3 scripts/genCrsFixtures.py   # 座標変換の検証用固定値を PROJ 
 
 ```sh
 npm run dev
-npm i --no-save playwright-core pngjs && node scripts/e2e.mjs
+npm i --no-save playwright-core pngjs && node scripts/e2e.mjs      # 住所検索と地図
+E2E_PORT=5178 node scripts/e2ePlan.mjs                             # 住所→ピン→PDF の動線
 ```
 
 ## 印刷するときの注意

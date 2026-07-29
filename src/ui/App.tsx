@@ -5,22 +5,14 @@
 
 import { useState } from 'react';
 import { loadFontBytesFromNetwork } from '../pdf/font';
+import { downloadBytes } from './download';
 import { buildStage0Pdf, buildCalibrationPdf } from '../pdf/stage0';
 import { PAPER_SIZES, PAPER_ORDER, DEFAULT_PAPER, frameExtentMeters } from '../paper/layout';
 import type { PaperSizeName } from '../paper/layout';
 import { DEFAULT_SCALE_DENOMINATOR } from '../paper/transform';
 import { useCalibration, DEFAULT_NOMINAL_MM } from './useCalibration';
 import { SitePicker, SiteSelection } from './SitePicker';
-
-function download(bytes: Uint8Array, filename: string) {
-  const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+import { PlanPanel } from './PlanPanel';
 
 export function App() {
   const [paperName, setPaperName] = useState<PaperSizeName>(DEFAULT_PAPER.name);
@@ -41,12 +33,12 @@ export function App() {
       const fontBytes = await loadFontBytesFromNetwork();
       const suffix = cal.calibration ? '_補正あり' : '';
       if (kind === 'plan') {
-        download(
+        downloadBytes(
           await buildStage0Pdf(fontBytes, { paper, calibration: cal.calibration }),
           `計画平面図_第0段階_${paper.name}${suffix}.pdf`,
         );
       } else {
-        download(
+        downloadBytes(
           await buildCalibrationPdf(fontBytes, paper, cal.calibration),
           `縮尺検証シート_${paper.name}${suffix}.pdf`,
         );
@@ -62,11 +54,15 @@ export function App() {
     <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 860, margin: '2rem auto', padding: '0 1rem', lineHeight: 1.7 }}>
       <h1 style={{ fontSize: '1.4rem' }}>計画平面図 作成</h1>
       <p>
-        住所から対象地を決め、平面直角座標系を確定します。筆界の取り込みと作図は順次入ります。
-        いま出力できるPDFは20.000m×20.000mの正方形1つだけの検証用です。
+        住所を検索し、地図でピンを対象地に合わせると、その場所の計画平面図をPDFで出せます。
+        縮尺は1/250固定です。
       </p>
 
       <SitePicker value={site} onChange={setSite} />
+
+      <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #ddd' }} />
+
+      <PlanPanel site={site} calibration={cal.calibration} />
 
       <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #ddd' }} />
 
@@ -152,10 +148,10 @@ export function App() {
         </div>
       )}
 
-      <h2 style={{ fontSize: '1.1rem', marginTop: '2rem' }}>出力</h2>
+      <h2 style={{ fontSize: '1.1rem', marginTop: '2rem' }}>検証用の出力</h2>
       <p style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
         <button type="button" disabled={busy || blocked} onClick={() => run('plan')} style={{ padding: '0.6rem 1rem' }}>
-          計画平面図PDFを出力
+          20m正方形の検証PDF
         </button>
         <button type="button" disabled={busy || blocked} onClick={() => run('calibration')} style={{ padding: '0.6rem 1rem' }}>
           縮尺検証シートを出力

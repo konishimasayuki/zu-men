@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { buildPlanPdf, checkFit, centeredOrigin } from './plan';
+import { buildPlanPdf, checkFit, centeredOrigin, originCenteredOn } from './plan';
 import { formatArea } from './drawScene';
 import { referenceScene } from '../scenes/reference';
-import { PAPER_SIZES } from '../paper/layout';
+import { makeSampleScene, SAMPLE_143 } from '../scenes/sample';
+import { PAPER_SIZES, frameExtentMeters } from '../paper/layout';
 import { emptyScene, boundsOf, centroid } from '../draw/scene';
 import { makeBand, countStalls } from '../draw/parking';
 import { readPageGeometry, closestSegmentLengthMm } from '../test/pdfInspect';
@@ -155,5 +156,42 @@ describe('計画平面図のPDF', () => {
     const geom = await readPageGeometry(pdf);
     expect(geom.nonIdentityCtmCount).toBe(1);
     expect(geom.ctmScales[0]).toBeCloseTo(200 / 198, 9);
+  });
+});
+
+describe('地図で指した場所を中心に置く（アプリの目的そのもの）', () => {
+  it('指した点が図郭のちょうど中央に来る', () => {
+    const pin = { x: 7484.234, y: -28070.811 };
+    const origin = originCenteredOn(pin, PAPER_SIZES.A4, 250);
+    // A4図郭は 65.5m（東西）×45.0m（南北）
+    expect(origin.x + 45.0 / 2).toBeCloseTo(pin.x, 9);
+    expect(origin.y + 65.5 / 2).toBeCloseTo(pin.y, 9);
+  });
+
+  it('ピンを動かすと図面の原点も同じだけ動く', () => {
+    const a = originCenteredOn({ x: 100, y: 200 }, PAPER_SIZES.A4, 250);
+    const b = originCenteredOn({ x: 135.26, y: 153.14 }, PAPER_SIZES.A4, 250);
+    expect(b.x - a.x).toBeCloseTo(35.26, 9);
+    expect(b.y - a.y).toBeCloseTo(-46.86, 9);
+  });
+
+  it('用紙を変えても指した点は中央のまま', () => {
+    const pin = { x: 7484.234, y: -28070.811 };
+    for (const name of ['A4', 'A3', 'A2', 'A1'] as const) {
+      const paper = PAPER_SIZES[name];
+      const origin = originCenteredOn(pin, paper, 250);
+      const e = frameExtentMeters(paper, 250);
+      expect(origin.x + e.heightM / 2).toBeCloseTo(pin.x, 9);
+      expect(origin.y + e.widthM / 2).toBeCloseTo(pin.y, 9);
+    }
+  });
+
+  it('ピンの位置に敷地の中心が来る', () => {
+    const pin = { x: 7484.234, y: -28070.811 };
+    const scene = makeSampleScene({ ...SAMPLE_143, center: pin });
+    const site = scene.parcels.find((p) => p.isSubject)!;
+    const c = centroid(site.outline);
+    // 角を落としているぶん重心はわずかにずれるが、1m以内
+    expect(Math.hypot(c.x - pin.x, c.y - pin.y)).toBeLessThan(1.0);
   });
 });

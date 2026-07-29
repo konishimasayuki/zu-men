@@ -14,6 +14,11 @@ import { makeBand, DEFAULT_STALL } from '../draw/parking';
 import { tsuboToM2 } from '../draw/tsubo';
 
 export interface SampleSpec {
+  /**
+   * 敷地の中心となる平面直角座標。
+   * 地図で指したピンの位置がここに入る。省略すると既定の基準点。
+   */
+  center?: PlaneXY;
   /** 敷地面積[坪]。 */
   tsubo: number;
   /** 地番。 */
@@ -42,9 +47,15 @@ export const SAMPLE_143: SampleSpec = {
   bearingDeg: 80, aspect: 1.45, stallsPerBand: 8, bandCount: 2,
 };
 
-/** 基準点。埼玉県鴻巣市付近（第IX系）。 */
-const ORIGIN: PlaneXY = { x: 7348.975, y: -28023.951 };
+/** 既定の基準点。埼玉県鴻巣市付近（第IX系）。 */
+const DEFAULT_CENTER: PlaneXY = { x: 7348.975, y: -28023.951 };
 
+/**
+ * 敷地とその周辺を組み立てる。
+ *
+ * `center` は敷地の中心。地図で指したピンの位置をそのまま渡す。
+ * 敷地はこの点を中心に置かれ、周辺もこの点を基準に広がる。
+ */
 export function makeSampleScene(spec: SampleSpec): Scene {
   const areaM2 = tsuboToM2(spec.tsubo);
   // 長手 L、短手 W。L = W * aspect、L*W = areaM2
@@ -54,9 +65,13 @@ export function makeSampleScene(spec: SampleSpec): Scene {
   const rad = (spec.bearingDeg * Math.PI) / 180;
   const along = { x: Math.cos(rad), y: Math.sin(rad) };
   const perp = { x: -Math.sin(rad), y: Math.cos(rad) };
+  const c = spec.center ?? DEFAULT_CENTER;
+  // ローカル座標(u,v)の原点は敷地の左下隅。center が敷地の中心に来るようずらす。
+  const ox = c.x - (along.x * longM) / 2 - (perp.x * shortM) / 2;
+  const oy = c.y - (along.y * longM) / 2 - (perp.y * shortM) / 2;
   const at = (u: number, v: number): PlaneXY => ({
-    x: ORIGIN.x + along.x * u + perp.x * v,
-    y: ORIGIN.y + along.y * u + perp.y * v,
+    x: ox + along.x * u + perp.x * v,
+    y: oy + along.y * u + perp.y * v,
   });
   const path = (pairs: Array<[number, number]>): PlaneXY[] => pairs.map(([u, v]) => at(u, v));
 
