@@ -11,11 +11,9 @@
 import type { PlaneXY } from '../paper/transform';
 import type { Scene, Parcel } from '../draw/scene';
 import { emptyScene } from '../draw/scene';
-import { labelSpot, layoutParking, ParkingLayoutOptions } from '../draw/layout';
-import {
-  boundaryEdges, defaultEntranceEdge, planDrainage, planEntrance,
-  DrainageOptions, EntranceOptions, NeighbourPolygon, SiteEdge,
-} from '../draw/site';
+import type { ParkingLayoutOptions } from '../draw/layout';
+import type { DrainageOptions, EntranceOptions, NeighbourPolygon, SiteEdge } from '../draw/site';
+import { decorateSubject } from './decorate';
 import { toPlaneXY } from '../geo/crs';
 import type { ZoneNumber } from '../geo/crs';
 import { area } from '../geo/area';
@@ -166,90 +164,38 @@ export function buildSceneFromMoj(opts: BuildFromMojOptions): BuildFromMojResult
 
   // 進入口・排水は申請地の1筆目の外周を基準にする。
   // 複数筆を1つの敷地として扱う統合はまだ実装していない。
-  const primary = subjectParcels[0]
-    ? subjectParcels[0].outline.map((q) => toPlaneXY(q, zone))
-    : null;
   const neighbourPolys: NeighbourPolygon[] = neighbourParcels.map((p) => ({
     chiban: p.chiban,
     outline: p.outline.map((q) => toPlaneXY(q, zone)),
   }));
-  const edges = primary ? boundaryEdges(primary, neighbourPolys) : [];
 
+  let stallCount = 0;
+  let edges: SiteEdge[] = [];
   let entranceEdgeIndex: number | null = null;
   let dischargeEdgeIndex: number | null = null;
 
-  // 申請地の外周にフェンスを回し、内側に駐車区画を割り付ける
-  let stallCount = 0;
   for (const p of subjectParcels) {
     const outline = p.outline.map((q) => toPlaneXY(q, zone));
     const isPrimary = p === subjectParcels[0];
-
-    const layout = opts.parking === false ? null : layoutParking(outline, opts.parking ?? {});
-    if (layout) {
-      scene.bands.push(...layout.bands);
-      stallCount += layout.count;
-      // 参考図面は区画のあいだに「通路」と書いている。台数は書かない。
-      for (const at of layout.aisleCenters) {
-        scene.notes.push({ text: '通路', at, rotationDeg: paperRotationFor(layout.bearingDeg) });
-      }
-    }
-
-    // 進入口。フェンスは開口部で切る。切らないと車の入れない図面になる。
-    const entranceEdge =
-      isPrimary && opts.entrance !== false
-        ? pickEdge(edges, opts.entranceEdgeIndex) ?? defaultEntranceEdge(edges)
-        : null;
-    if (entranceEdge) {
-      const plan = planEntrance(outline, entranceEdge, opts.entrance || {});
-      entranceEdgeIndex = entranceEdge.index;
-      for (const path of plan.fencePaths) scene.edgings.push({ kind: 'fence', path });
-      for (const [a, b] of plan.cornerCuts) scene.edgings.push({ kind: 'fence', path: [a, b] });
-      // 参考図面の進入口は引出し線で示されている。矢印記号は入れない。
-      scene.notes.push({
-        text: '進入口',
-        at: {
-          x: plan.center.x + entranceEdge.outward.x * 3.5,
-          y: plan.center.y + entranceEdge.outward.y * 3.5,
-        },
-        sizeMm: 2.6,
-        leaderTo: plan.center,
-      });
-    } else {
-      scene.edgings.push({ kind: 'fence', path: outline.concat([outline[0]]) });
-    }
-
-    // 排水。舗装で浸透しなくなるぶんを放流先へ導く。
-    const dischargeEdge =
-      isPrimary && opts.drainage !== false
-        ? pickEdge(edges, opts.dischargeEdgeIndex) ?? entranceEdge
-        : null;
-    if (dischargeEdge) {
-      const plan = planDrainage(layout?.bands ?? [], dischargeEdge, opts.drainage || {});
-      dischargeEdgeIndex = dischargeEdge.index;
-      if (plan.gutter) scene.edgings.push(plan.gutter);
-      scene.basins.push(...plan.basins);
-      scene.arrows.push(...plan.arrows);
-      // 進入口の注記と重ならないよう、辺の中央ではなく1/5あたりの外側に置く
-      const t = 0.2;
-      const anchor = {
-        x: dischargeEdge.a.x + (dischargeEdge.b.x - dischargeEdge.a.x) * t,
-        y: dischargeEdge.a.y + (dischargeEdge.b.y - dischargeEdge.a.y) * t,
-      };
-      scene.notes.push({
-        text: '雨水放流先',
-        at: {
-          x: anchor.x + dischargeEdge.outward.x * 3.0,
-          y: anchor.y + dischargeEdge.outward.y * 3.0,
-        },
-        sizeMm: 2.6,
-        leaderTo: anchor,
-      });
-    }
-
-    // 地番・地目・面積・所有者は4行になる。区画に重なると読めないので空き地を探す。
     const label = scene.parcels.find((q) => q.isSubject && q.chiban === p.chiban);
-    if (label) {
-      label.labelAt = labelSpot(outline, layout ? layout.bands.map((b) => b.outline) : []);
+    const r = decorateSubject(scene, outline, neighbourPolys, label, {
+      parking: opts.parking,
+      // 2筆目以降は進入口も排水も付けない。敷地の統合ができていないので、
+      // 筆ごとに進入口を開けると図面として意味を成さない。
+      ...(isPrimary
+        ? {
+            entranceEdgeIndex: opts.entranceEdgeIndex,
+            entrance: opts.entrance,
+            dischargeEdgeIndex: opts.dischargeEdgeIndex,
+            drainage: opts.drainage,
+          }
+        : { entrance: false as const, drainage: false as const }),
+    });
+    stallCount += r.stallCount;
+    if (isPrimary) {
+      edges = r.edges;
+      entranceEdgeIndex = r.entranceEdgeIndex;
+      dischargeEdgeIndex = r.dischargeEdgeIndex;
     }
   }
 
@@ -266,24 +212,7 @@ export function buildSceneFromMoj(opts: BuildFromMojOptions): BuildFromMojResult
   };
 }
 
-/** 番号で辺を選ぶ。範囲外や未指定なら null。 */
-function pickEdge(edges: readonly SiteEdge[], index: number | undefined): SiteEdge | null {
-  if (index === undefined) return null;
-  return edges.find((e) => e.index === index) ?? null;
-}
-
-/**
- * 方位角[度]（真北から時計回り）を、紙面での文字の回転角[度]（反時計回り）に直す。
- * 紙は北が上なので、真東(90度)が水平(0度)になる。文字が逆さにならないよう畳む。
- */
-export function paperRotationFor(bearingDeg: number): number {
-  let deg = 90 - bearingDeg;
-  while (deg > 90) deg -= 180;
-  while (deg <= -90) deg += 180;
-  return deg;
-}
-
-/** ピンにいちばん近い筆を、図郭内から選ぶ。申請地の初期選択に使う。 */
+/** ピンにいちばん近い筆を選ぶ。申請地の初期選択に使う。 */
 export function nearestParcel(
   parcels: readonly MojParcel[],
   pin: { lon: number; lat: number },
